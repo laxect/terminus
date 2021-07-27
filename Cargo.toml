@@ -1,0 +1,2 @@
+[workspace]
+members = ["terminus_types"]
