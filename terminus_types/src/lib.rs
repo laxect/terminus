@@ -1,5 +1,5 @@
-use base64::encode;
-use blake3::hash;
+use blake3::{hash, Hash};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -26,10 +26,18 @@ pub struct Author {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Node {
-    id: Vec<u128>,
-    title: String,
-    author: Author,
-    content: String,
+    pub id: Vec<u128>,
+    pub title: String,
+    pub author: Author,
+    pub content: String,
+    pub publish_time: DateTime<Utc>,
+    pub edited: bool,
+}
+
+fn mask_name_pass(name: &str, pass: &str) -> Hash {
+    let mut input = name.to_owned();
+    input.push_str(pass);
+    hash(input.as_bytes())
 }
 
 impl Author {
@@ -44,11 +52,10 @@ impl Author {
         match self.pass {
             Pass::Mask(_) => self,
             Pass::Pass(pass) => {
-                let mut input = self.name.clone();
-                input.push_str(&pass);
+                let pass = mask_name_pass(&self.name, &pass);
                 Self {
                     name: self.name,
-                    pass: Pass::Mask(encode(hash(input.as_bytes()).as_bytes())),
+                    pass: Pass::Mask(pass.to_string()),
                 }
             }
         }
@@ -59,11 +66,7 @@ impl Author {
             return false;
         }
         match self.pass {
-            Pass::Mask(ref inner_pass) => {
-                let mut input = name;
-                input.push_str(&pass);
-                inner_pass == &encode(hash(input.as_bytes()).as_bytes())
-            }
+            Pass::Mask(ref inner_pass) => inner_pass == &mask_name_pass(&name, &pass).to_string(),
             Pass::Pass(ref inner_pass) => inner_pass == &pass,
         }
     }
@@ -78,6 +81,8 @@ impl Node {
             title,
             author,
             content,
+            publish_time: Utc::now(),
+            edited: false,
         }
     }
 }
