@@ -9,7 +9,7 @@ fn get_id(tail: u128) -> u128 {
         .duration_since(UNIX_EPOCH)
         .expect("Hello John titor!")
         .as_secs() as u128;
-    unix_timestamp << 64 + tail
+    (unix_timestamp << 64) + tail
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -42,9 +42,7 @@ impl Author {
 
     pub fn mask(self) -> Self {
         match self.pass {
-            Pass::Mask(_) => {
-                return self;
-            }
+            Pass::Mask(_) => self,
             Pass::Pass(pass) => {
                 let mut input = self.name.clone();
                 input.push_str(&pass);
@@ -72,8 +70,8 @@ impl Author {
 }
 
 impl Node {
-    pub fn new(parent_id: &Vec<u128>, title: String, author: Author, content: String, tail: u64) -> Self {
-        let mut id = parent_id.clone();
+    pub fn new(parent_id: &[u128], title: String, author: Author, content: String, tail: u64) -> Self {
+        let mut id = parent_id.to_owned();
         id.push(get_id(tail as u128));
         Self {
             id,
