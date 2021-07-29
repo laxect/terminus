@@ -138,6 +138,7 @@ where
         let old_body: NodeBody = bincode::deserialize(&old_body)?;
         if old_body.match_pass(&body) {
             action_fun(&tree, &id, body)?;
+            COUNT.fetch_add(1, Ordering::Relaxed);
             return Ok(Response::Delete);
         }
         log::warn!("[{}] node {} pass not match.", action, target_id);
