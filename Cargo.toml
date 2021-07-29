@@ -1,2 +1,2 @@
 [workspace]
-members = ["terminus_types"]
+members = ["terminus_types", "terminus-server"]
