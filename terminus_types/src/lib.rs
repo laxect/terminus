@@ -1,5 +1,4 @@
 use action::Action;
-use blake3::{hash, Hash};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -48,10 +47,10 @@ pub struct Node {
     pub edited: bool,
 }
 
-fn mask_name_pass(name: &str, pass: &str) -> Hash {
+fn mask_name_pass(name: &str, pass: &str) -> String {
     let mut input = name.to_owned();
     input.push_str(pass);
-    hash(input.as_bytes())
+    base64::encode(blake3::hash(input.as_bytes()).as_bytes())
 }
 
 impl Author {
@@ -67,7 +66,7 @@ impl Author {
             Pass::Mask(_) => {}
             Pass::Pass(ref pass) => {
                 let pass = mask_name_pass(&self.name, pass);
-                self.pass = Pass::Mask(pass.to_string());
+                self.pass = Pass::Mask(pass);
             }
         }
     }
@@ -77,7 +76,7 @@ impl Author {
             return false;
         }
         match self.pass {
-            Pass::Mask(ref inner_pass) => inner_pass == &mask_name_pass(&name, &pass).to_string(),
+            Pass::Mask(ref inner_pass) => inner_pass == &mask_name_pass(&name, &pass),
             Pass::Pass(ref inner_pass) => inner_pass == &pass,
         }
     }
