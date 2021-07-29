@@ -1,7 +1,13 @@
+use action::Action;
 use blake3::{hash, Hash};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+pub mod action;
+mod error;
+
+pub use error::{Error, Result};
 
 // u128 is 8 * 16
 fn get_id(tail: u128) -> u128 {
@@ -24,9 +30,17 @@ pub struct Author {
     pass: Pass,
 }
 
+impl Author {
+    pub fn is_masked(&self) -> bool {
+        matches!(self.pass, Pass::Mask(_))
+    }
+}
+
+pub type NodeId = Vec<u128>;
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Node {
-    pub id: Vec<u128>,
+    pub id: NodeId,
     pub title: String,
     pub author: Author,
     pub content: String,
@@ -48,20 +62,17 @@ impl Author {
         }
     }
 
-    pub fn mask(self) -> Self {
+    pub fn mask(&mut self) {
         match self.pass {
-            Pass::Mask(_) => self,
-            Pass::Pass(pass) => {
-                let pass = mask_name_pass(&self.name, &pass);
-                Self {
-                    name: self.name,
-                    pass: Pass::Mask(pass.to_string()),
-                }
+            Pass::Mask(_) => {}
+            Pass::Pass(ref pass) => {
+                let pass = mask_name_pass(&self.name, pass);
+                self.pass = Pass::Mask(pass.to_string());
             }
         }
     }
 
-    pub fn unlock(&self, name: String, pass: String) -> bool {
+    pub fn pass_match(&self, name: String, pass: String) -> bool {
         if self.name != name {
             return false;
         }
@@ -85,6 +96,29 @@ impl Node {
             edited: false,
         }
     }
+
+    pub fn post(mut self) -> Action {
+        if !self.author.is_masked() {
+            self.author.mask();
+        }
+        Action::Post(self)
+    }
+
+    pub fn update(self) -> Result<Action> {
+        if self.author.is_masked() {
+            return Err(Error::NeedUnMaskPass);
+        }
+        Ok(Action::Update(self))
+    }
+
+    /// delete need to send pass and id, all other field is not needed.
+    /// but for clean api, all them has same pattern. may change in the future.
+    pub fn delete(self) -> Result<Action> {
+        if self.author.is_masked() {
+            return Err(Error::NeedUnMaskPass);
+        }
+        Ok(Action::Delete(self))
+    }
 }
 
 #[cfg(test)]
@@ -95,8 +129,8 @@ mod tests {
     fn mask_unlock() {
         let name = String::from("donadona");
         let pass = String::from("xmicjsuUHXahuxaHU");
-        let author = Author::new(name.clone(), pass.clone());
-        let author = author.mask();
-        assert!(author.unlock(name, pass));
+        let mut author = Author::new(name.clone(), pass.clone());
+        author.mask();
+        assert!(author.pass_match(name, pass));
     }
 }
