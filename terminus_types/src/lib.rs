@@ -17,16 +17,25 @@ fn get_id(tail: u128) -> u128 {
     (unix_timestamp << 64) + tail
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Pass {
     Pass(String),
     Mask(String),
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+impl Pass {
+    pub fn get_pass(&self) -> &str {
+        match self {
+            Pass::Mask(pass) => pass,
+            Pass::Pass(pass) => pass,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Author {
-    name: String,
-    pass: Pass,
+    pub name: String,
+    pub pass: Pass,
 }
 
 impl Author {
@@ -37,7 +46,7 @@ impl Author {
 
 pub type NodeId = Vec<u128>;
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Node {
     pub id: NodeId,
     pub title: String,
@@ -71,13 +80,13 @@ impl Author {
         }
     }
 
-    pub fn pass_match(&self, name: String, pass: String) -> bool {
+    pub fn match_pass(&self, name: &str, pass: &str) -> bool {
         if self.name != name {
             return false;
         }
         match self.pass {
-            Pass::Mask(ref inner_pass) => inner_pass == &mask_name_pass(&name, &pass),
-            Pass::Pass(ref inner_pass) => inner_pass == &pass,
+            Pass::Mask(ref inner_pass) => inner_pass == &mask_name_pass(name, pass),
+            Pass::Pass(ref inner_pass) => inner_pass == pass,
         }
     }
 }
@@ -103,10 +112,11 @@ impl Node {
         Action::Post(self)
     }
 
-    pub fn update(self) -> Result<Action> {
+    pub fn update(mut self) -> Result<Action> {
         if self.author.is_masked() {
             return Err(Error::NeedUnMaskPass);
         }
+        self.edited = true;
         Ok(Action::Update(self))
     }
 
@@ -117,6 +127,12 @@ impl Node {
             return Err(Error::NeedUnMaskPass);
         }
         Ok(Action::Delete(self))
+    }
+
+    /// the last part of id.
+    pub fn last_id(&self) -> Result<u128> {
+        // should always have one
+        self.id.last().ok_or(Error::IdInvalid).map(|x| *x)
     }
 }
 
@@ -130,6 +146,6 @@ mod tests {
         let pass = String::from("xmicjsuUHXahuxaHU");
         let mut author = Author::new(name.clone(), pass.clone());
         author.mask();
-        assert!(author.pass_match(name, pass));
+        assert!(author.match_pass(&name, &pass));
     }
 }

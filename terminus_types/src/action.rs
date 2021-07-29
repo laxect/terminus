@@ -1,4 +1,4 @@
-use crate::{Node, NodeId};
+use crate::{Error, Node, NodeId};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -15,6 +15,11 @@ pub enum Action {
     Post(Node),
 }
 
-/// TODO
 #[derive(Serialize, Deserialize, Debug)]
-pub enum Response {}
+pub enum Response {
+    Post,
+    Update,
+    Delete,
+    List(Vec<Node>),
+    Err(Error),
+}

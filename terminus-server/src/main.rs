@@ -1,7 +1,20 @@
+use terminus_types::action::{Action, ListTarget, Response};
 use tokio::{
-    io::AsyncReadExt,
+    io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
 };
+
+mod store;
+
+fn take_action(action: Action) -> anyhow::Result<Response> {
+    match action {
+        Action::Post(node) => store::post(node),
+        Action::Delete(node) => store::delete(node),
+        Action::Update(node) => store::update(node),
+        Action::List(ListTarget::Root) => store::list_root(),
+        Action::List(ListTarget::Node(node_id)) => store::list(node_id),
+    }
+}
 
 async fn handle(mut socket: TcpStream) -> anyhow::Result<()> {
     let mut indicator = [0u8; 4];
@@ -15,8 +28,19 @@ async fn handle(mut socket: TcpStream) -> anyhow::Result<()> {
         }
         buf.resize(size as usize, 0u8);
         socket.read_exact(&mut buf).await?;
-        let ss: String = bincode::deserialize(&buf)?;
-        println!("{}", ss);
+        let action: Action = bincode::deserialize(&buf)?;
+        match take_action(action) {
+            Ok(resp) => {
+                let size = bincode::serialized_size(&resp)? as u32;
+                let size = bincode::serialize(&size)?;
+                let data = bincode::serialize(&resp)?;
+                socket.write_all(&size).await?;
+                socket.write_all(&data).await?;
+            }
+            Err(e) => {
+                log::warn!("can not deal request: {}", e);
+            }
+        }
     }
 }
 
@@ -34,7 +58,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     loop {
         let (socket, address) = listener.accept().await?;
-        log::info!("Link in from: {}", address);
-        tokio::spawn(handle(socket));
+        log::info!("Link from {} established.", address);
+        tokio::spawn(async move {
+            if let Err(e) = handle(socket).await {
+                log::warn!("link from {} failed: {}.", address, e);
+            } else {
+                log::info!("link from {} ended.", address);
+            }
+        });
     }
 }
