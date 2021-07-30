@@ -16,6 +16,7 @@ fn take_action(action: Action) -> anyhow::Result<Response> {
     }
 }
 
+const EOS: &[u8] = &[0; 4];
 async fn handle(mut socket: TcpStream) -> anyhow::Result<()> {
     let mut indicator = [0u8; 4];
     let mut buf = Vec::new();
@@ -25,6 +26,7 @@ async fn handle(mut socket: TcpStream) -> anyhow::Result<()> {
         let size: u32 = bincode::deserialize(&indicator)?;
         if size == 0 {
             log::info!("end signal received.");
+            socket.write_all(EOS).await?;
             return Ok(());
         }
         buf.resize(size as usize, 0u8);
@@ -58,7 +60,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let color_choice = simplelog::ColorChoice::Auto;
     simplelog::TermLogger::init(log_level, log_config, term_mode, color_choice).expect("log set failed");
 
-    let listener = TcpListener::bind("[::]:3000").await?;
+    let listener = TcpListener::bind("[::]:1120").await?;
 
     loop {
         let (socket, address) = listener.accept().await?;

@@ -1,2 +1,2 @@
 [workspace]
-members = ["terminus_types", "terminus-server"]
+members = ["terminus_types", "terminus-server", "kanban"]

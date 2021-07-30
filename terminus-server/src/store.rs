@@ -26,6 +26,10 @@ impl NodeBody {
     pub(crate) fn update_publish_time(&mut self) {
         self.publish_time = Utc::now();
     }
+
+    pub(crate) fn mask(&mut self) {
+        self.author.mask()
+    }
 }
 
 impl From<NodeBody> for IVec {
@@ -80,6 +84,7 @@ static DB: Lazy<Db> = Lazy::new(|| sled::open("database").unwrap());
 static COUNT: AtomicU64 = AtomicU64::new(0);
 
 pub(crate) fn post(node: Node) -> anyhow::Result<Response> {
+    let resp_node = node.clone();
     // should have one
     if let Some(node_id) = node.id.last() {
         log::info!("[post] new post: {}.", node_id);
@@ -94,7 +99,7 @@ pub(crate) fn post(node: Node) -> anyhow::Result<Response> {
     }
     tree.insert(&id, body)?;
     COUNT.fetch_add(1, Ordering::Relaxed);
-    Ok(Response::Post)
+    Ok(Response::Post(resp_node))
 }
 
 const ROOT_START: &[u8] = &[0; 24];
@@ -133,12 +138,13 @@ where
     let target_id = node.last_id()?;
     log::info!("[{}] node {}.", action, target_id);
     // prepare
-    let (id, body) = disperse_node(node)?;
+    let (id, mut body) = disperse_node(node)?;
     // really delete
     let tree = DB.open_tree(CONTENT_TREE)?;
     if let Some(old_body) = tree.get(&id)? {
         let old_body: NodeBody = bincode::deserialize(&old_body)?;
         if old_body.match_pass(&body) {
+            body.mask();
             let resp = action_fun(&tree, &id, body, old_body)?;
             COUNT.fetch_add(1, Ordering::Relaxed);
             return Ok(resp);
@@ -152,22 +158,24 @@ where
 
 pub(crate) fn delete(node: Node) -> anyhow::Result<Response> {
     let five_hour = Duration::hours(5);
-    delete_or_update(node, "delete", |tree, id, _body, old_body| {
+    delete_or_update(node, "delete", |tree, id, body, old_body| {
         let publish_time = old_body.publish_time;
         let now = Utc::now();
         if now - publish_time > five_hour {
             return Ok(Response::Err(Error::DeleteLimitOverdue));
         }
+        let node = assemble_node(id, &bincode::serialize(&body)?)?;
         tree.remove(id)?;
-        Ok(Response::Delete)
+        Ok(Response::Delete(node))
     })
 }
 
 pub(crate) fn update(node: Node) -> anyhow::Result<Response> {
     delete_or_update(node, "update", |tree, id, mut body, _old_body| {
         body.edited = true;
+        let node = assemble_node(id, &bincode::serialize(&body)?)?;
         tree.insert(id, body)?;
-        Ok(Response::Update)
+        Ok(Response::Update(node))
     })
 }
 

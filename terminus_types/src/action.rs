@@ -17,9 +17,9 @@ pub enum Action {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Response {
-    Post,
-    Update,
-    Delete,
+    Post(Node),
+    Update(Node),
+    Delete(Node),
     List(Vec<Node>),
     Err(Error),
 }
