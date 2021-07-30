@@ -13,6 +13,8 @@ pub enum Error {
     IdInvalid,
     #[error("node pass not match")]
     PassNotMatch,
+    #[error("node is too old to delete")]
+    DeleteLimitOverdue,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

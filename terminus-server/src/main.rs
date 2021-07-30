@@ -24,6 +24,7 @@ async fn handle(mut socket: TcpStream) -> anyhow::Result<()> {
         socket.read_exact(&mut indicator).await?;
         let size: u32 = bincode::deserialize(&indicator)?;
         if size == 0 {
+            log::info!("end signal received.");
             return Ok(());
         }
         buf.resize(size as usize, 0u8);
@@ -31,6 +32,9 @@ async fn handle(mut socket: TcpStream) -> anyhow::Result<()> {
         let action: Action = bincode::deserialize(&buf)?;
         match take_action(action) {
             Ok(resp) => {
+                if let Response::Err(e) = &resp {
+                    log::warn!("[handle] node handle failed: {}.", e);
+                }
                 let size = bincode::serialized_size(&resp)? as u32;
                 let size = bincode::serialize(&size)?;
                 let data = bincode::serialize(&resp)?;

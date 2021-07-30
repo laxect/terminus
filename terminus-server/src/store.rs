@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use sled::{Db, IVec};
@@ -21,6 +21,10 @@ impl NodeBody {
         let name = &other.author.name;
         let pass = other.author.pass.get_pass();
         self.author.match_pass(name, pass)
+    }
+
+    pub(crate) fn update_publish_time(&mut self) {
+        self.publish_time = Utc::now();
     }
 }
 
@@ -77,17 +81,15 @@ static COUNT: AtomicU64 = AtomicU64::new(0);
 
 pub(crate) fn post(node: Node) -> anyhow::Result<Response> {
     // should have one
-    let target_id: u128;
     if let Some(node_id) = node.id.last() {
-        target_id = *node_id;
         log::info!("[post] new post: {}.", node_id);
     } else {
         return Ok(Response::Err(Error::IdInvalid));
     }
     let tree = DB.open_tree(CONTENT_TREE)?;
-    let (id, body) = disperse_node(node)?;
+    let (id, mut body) = disperse_node(node)?;
+    body.update_publish_time();
     if tree.contains_key(&id)? {
-        log::warn!("[post] attempt to duplicate node {}.", target_id);
         return Ok(Response::Err(Error::NodeExist));
     }
     tree.insert(&id, body)?;
@@ -123,7 +125,7 @@ pub(crate) fn list(root: OriNodeId) -> anyhow::Result<Response> {
 
 fn delete_or_update<F>(node: Node, action: &str, action_fun: F) -> anyhow::Result<Response>
 where
-    F: Fn(&sled::Tree, &[u8], NodeBody) -> anyhow::Result<()>,
+    F: Fn(&sled::Tree, &[u8], NodeBody, NodeBody) -> anyhow::Result<Response>,
 {
     if node.author.is_masked() {
         return Ok(Response::Err(Error::NeedUnMaskPass));
@@ -137,9 +139,9 @@ where
     if let Some(old_body) = tree.get(&id)? {
         let old_body: NodeBody = bincode::deserialize(&old_body)?;
         if old_body.match_pass(&body) {
-            action_fun(&tree, &id, body)?;
+            let resp = action_fun(&tree, &id, body, old_body)?;
             COUNT.fetch_add(1, Ordering::Relaxed);
-            return Ok(Response::Delete);
+            return Ok(resp);
         }
         log::warn!("[{}] node {} pass not match.", action, target_id);
         return Ok(Response::Err(Error::PassNotMatch));
@@ -149,17 +151,23 @@ where
 }
 
 pub(crate) fn delete(node: Node) -> anyhow::Result<Response> {
-    delete_or_update(node, "delete", |tree, id, _body| {
+    let five_hour = Duration::hours(5);
+    delete_or_update(node, "delete", |tree, id, _body, old_body| {
+        let publish_time = old_body.publish_time;
+        let now = Utc::now();
+        if now - publish_time > five_hour {
+            return Ok(Response::Err(Error::DeleteLimitOverdue));
+        }
         tree.remove(id)?;
-        Ok(())
+        Ok(Response::Delete)
     })
 }
 
 pub(crate) fn update(node: Node) -> anyhow::Result<Response> {
-    delete_or_update(node, "update", |tree, id, mut body| {
+    delete_or_update(node, "update", |tree, id, mut body, _old_body| {
         body.edited = true;
         tree.insert(id, body)?;
-        Ok(())
+        Ok(Response::Update)
     })
 }
 
