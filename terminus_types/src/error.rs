@@ -9,7 +9,7 @@ pub enum Error {
     NodeExist,
     #[error("not a node here")]
     NodeNotExist,
-    #[error("node need a id")]
+    #[error("node id not valid")]
     IdInvalid,
     #[error("node pass not match")]
     PassNotMatch,

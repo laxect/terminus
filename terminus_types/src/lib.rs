@@ -44,26 +44,6 @@ impl Author {
     }
 }
 
-pub type NodeId = Vec<u8>;
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct Node {
-    pub id: NodeId,
-    pub title: String,
-    pub author: Author,
-    pub content: String,
-    pub publish_time: DateTime<Utc>,
-    // only update on top level node
-    pub last_reply: DateTime<Utc>,
-    pub edited: bool,
-}
-
-fn mask_name_pass(name: &str, pass: &str) -> String {
-    let mut input = name.to_owned();
-    input.push_str(pass);
-    base64::encode(blake3::hash(input.as_bytes()).as_bytes())
-}
-
 impl Author {
     pub fn new(name: String, pass: String) -> Self {
         Self {
@@ -91,6 +71,26 @@ impl Author {
             Pass::Pass(ref inner_pass) => inner_pass == pass,
         }
     }
+}
+
+pub type NodeId = Vec<u8>;
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Node {
+    pub id: NodeId,
+    pub title: String,
+    pub author: Author,
+    pub content: String,
+    pub publish_time: DateTime<Utc>,
+    // only update on top level node
+    pub last_reply: DateTime<Utc>,
+    pub edited: bool,
+}
+
+fn mask_name_pass(name: &str, pass: &str) -> String {
+    let mut input = name.to_owned();
+    input.push_str(pass);
+    base64::encode(blake3::hash(input.as_bytes()).as_bytes())
 }
 
 impl Node {
@@ -138,18 +138,22 @@ impl Node {
     pub fn last_id(&self) -> Result<u128> {
         // should always have one
         let last = self.id.get(self.id.len() - 16..);
-        bincode::deserialize(last.ok_or_else(|| Error::IdInvalid)?).map_err(|_| Error::IdInvalid)
+        bincode::deserialize(last.ok_or(Error::IdInvalid)?).map_err(|_| Error::IdInvalid)
     }
 
     pub fn top_id(&self) -> Result<u128> {
         // should always have one
         let last = self.id.get(..16);
-        bincode::deserialize(last.ok_or_else(|| Error::IdInvalid)?).map_err(|_| Error::IdInvalid)
+        bincode::deserialize(last.ok_or(Error::IdInvalid)?).map_err(|_| Error::IdInvalid)
     }
 
     pub fn top_id_bin(&self) -> Result<Vec<u8>> {
         // should always have one
         Ok(self.id.get(..16).ok_or(Error::IdInvalid)?.to_owned())
+    }
+
+    pub fn is_top_level(&self) -> bool {
+        self.id.len() == 16
     }
 }
 

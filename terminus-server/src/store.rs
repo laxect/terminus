@@ -84,26 +84,35 @@ static DB: Lazy<Db> = Lazy::new(|| sled::open("database").unwrap());
 
 pub(crate) fn post(node: Node) -> anyhow::Result<Response> {
     let resp_node = node.clone();
+    if node.id.len() % 16 != 0 {
+        return Ok(Response::Err(Error::IdInvalid));
+    }
+    // TODO may should update last id
     // should have one
     let node_id = node.last_id()?;
     log::info!("[post] new post: {}.", node_id);
     // should have one
     let top_id_bin = node.top_id_bin()?;
+    let is_top_level = node.is_top_level();
+    // disperse node
     let (id, mut body) = disperse_node(node)?;
     body.update_publish_time();
     let tree = DB.open_tree(CONTENT_TREE)?;
+    let mut batch = Batch::default();
     if tree.contains_key(&id)? {
         return Ok(Response::Err(Error::NodeExist));
     }
-    let top = tree.get(&top_id_bin)?;
-    let mut top: NodeBody = if let Some(top) = top {
-        bincode::deserialize(&top)?
-    } else {
-        return Ok(Response::Err(Error::IdInvalid));
-    };
-    top.last_reply = body.publish_time;
-    let mut batch = Batch::default();
-    batch.insert(top_id_bin, top);
+    // check top level only when this is not a top level node
+    if !is_top_level {
+        let top = tree.get(&top_id_bin)?;
+        let mut top: NodeBody = if let Some(top) = top {
+            bincode::deserialize(&top)?
+        } else {
+            return Ok(Response::Err(Error::IdInvalid));
+        };
+        top.last_reply = body.publish_time;
+        batch.insert(top_id_bin, top);
+    }
     batch.insert(id, body);
     tree.apply_batch(batch)?;
     Ok(Response::Post(resp_node))
@@ -179,6 +188,7 @@ pub(crate) fn update(node: Node) -> anyhow::Result<Response> {
     delete_or_update(node, "update", |tree, id, mut body, _old_body| {
         body.edited = true;
         let node = assemble_node(id, &bincode::serialize(&body)?)?;
+        // TODO may should use merge instead of replace
         tree.insert(id, body)?;
         Ok(Response::Update(node))
     })
