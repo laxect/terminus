@@ -53,6 +53,8 @@ pub struct Node {
     pub author: Author,
     pub content: String,
     pub publish_time: DateTime<Utc>,
+    // only update on top level node
+    pub last_reply: DateTime<Utc>,
     pub edited: bool,
 }
 
@@ -95,12 +97,14 @@ impl Node {
     pub fn new(parent_id: &[u128], title: String, author: Author, content: String, tail: u64) -> Self {
         let mut id = parent_id.to_owned();
         id.push(get_id(tail as u128));
+        let now = Utc::now();
         Self {
             id,
             title,
             author,
             content,
-            publish_time: Utc::now(),
+            publish_time: now,
+            last_reply: now,
             edited: false,
         }
     }

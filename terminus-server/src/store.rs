@@ -1,11 +1,8 @@
 use chrono::{DateTime, Duration, Utc};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
-use sled::{Db, IVec};
-use std::sync::atomic::{AtomicU64, Ordering};
-use terminus_types::{action::Response, Author, Error, Node, NodeId as OriNodeId};
-
-type NodeId = Vec<u8>;
+use sled::{Batch, Db, IVec};
+use terminus_types::{action::Response, Author, Error, Node, NodeId};
 
 #[derive(Deserialize, Serialize)]
 struct NodeBody {
@@ -13,6 +10,7 @@ struct NodeBody {
     pub author: Author,
     pub content: String,
     pub publish_time: DateTime<Utc>,
+    pub last_reply: DateTime<Utc>,
     pub edited: bool,
 }
 
@@ -40,13 +38,15 @@ impl From<NodeBody> for IVec {
     }
 }
 
-fn disperse_node(node: Node) -> anyhow::Result<(NodeId, NodeBody)> {
+type NodeIdBin = Vec<u8>;
+fn disperse_node(node: Node) -> anyhow::Result<(NodeIdBin, NodeBody)> {
     let Node {
         id,
         title,
         author,
         content,
         publish_time,
+        last_reply,
         edited,
     } = node;
     let id = bincode::serialize(&id)?;
@@ -55,6 +55,7 @@ fn disperse_node(node: Node) -> anyhow::Result<(NodeId, NodeBody)> {
         author,
         content,
         publish_time,
+        last_reply,
         edited,
     };
     Ok((id, body))
@@ -67,6 +68,7 @@ fn assemble_node(id: &[u8], body: &[u8]) -> anyhow::Result<Node> {
         author,
         content,
         publish_time,
+        last_reply,
         edited,
     } = bincode::deserialize(body)?;
     Ok(Node {
@@ -75,13 +77,13 @@ fn assemble_node(id: &[u8], body: &[u8]) -> anyhow::Result<Node> {
         author,
         content,
         publish_time,
+        last_reply,
         edited,
     })
 }
 
 const CONTENT_TREE: &str = "content";
 static DB: Lazy<Db> = Lazy::new(|| sled::open("database").unwrap());
-static COUNT: AtomicU64 = AtomicU64::new(0);
 
 pub(crate) fn post(node: Node) -> anyhow::Result<Response> {
     let resp_node = node.clone();
@@ -91,14 +93,29 @@ pub(crate) fn post(node: Node) -> anyhow::Result<Response> {
     } else {
         return Ok(Response::Err(Error::IdInvalid));
     }
-    let tree = DB.open_tree(CONTENT_TREE)?;
+    // should have one
+    let top_id = if let Some(id) = node.id.first() {
+        bincode::serialize(&id)?
+    } else {
+        return Ok(Response::Err(Error::IdInvalid));
+    };
     let (id, mut body) = disperse_node(node)?;
     body.update_publish_time();
+    let tree = DB.open_tree(CONTENT_TREE)?;
     if tree.contains_key(&id)? {
         return Ok(Response::Err(Error::NodeExist));
     }
-    tree.insert(&id, body)?;
-    COUNT.fetch_add(1, Ordering::Relaxed);
+    let top = tree.get(&top_id)?;
+    let mut top: NodeBody = if let Some(top) = top {
+        bincode::deserialize(&top)?
+    } else {
+        return Ok(Response::Err(Error::IdInvalid));
+    };
+    top.last_reply = body.publish_time;
+    let mut batch = Batch::default();
+    batch.insert(top_id, top);
+    batch.insert(id, body);
+    tree.apply_batch(batch)?;
     Ok(Response::Post(resp_node))
 }
 
@@ -116,7 +133,7 @@ pub(crate) fn list_root() -> anyhow::Result<Response> {
     Ok(Response::List(res))
 }
 
-pub(crate) fn list(root: OriNodeId) -> anyhow::Result<Response> {
+pub(crate) fn list(root: NodeId) -> anyhow::Result<Response> {
     let root_id = bincode::serialize(&root)?;
     let tree = DB.open_tree(CONTENT_TREE)?;
     let list = tree.scan_prefix(root_id);
@@ -146,7 +163,6 @@ where
         if old_body.match_pass(&body) {
             body.mask();
             let resp = action_fun(&tree, &id, body, old_body)?;
-            COUNT.fetch_add(1, Ordering::Relaxed);
             return Ok(resp);
         }
         log::warn!("[{}] node {} pass not match.", action, target_id);
