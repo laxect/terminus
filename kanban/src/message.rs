@@ -22,6 +22,13 @@ pub(crate) enum Request {
     Shutdown,
 }
 
+impl Request {
+    pub(crate) fn send(self, s: &Sender<Request>) -> anyhow::Result<()> {
+        s.send(self)?;
+        Ok(())
+    }
+}
+
 impl From<Request> for Action {
     fn from(req: Request) -> Self {
         match req {
@@ -73,21 +80,22 @@ async fn receive(s: Sender<Update>, mut read: OwnedReadHalf) -> anyhow::Result<(
         let update: Response = bincode::deserialize(&buf)?;
         match update {
             Response::Err(e) => {
-                s.send(Update::Err(e)).expect("sender drop which should not drop here");
+                s.send(Update::Err(e))
+                    .expect("sender droped which should not drop here.");
             }
             Response::List(list) => {
                 s.send(Update::Nodes(list))
-                    .expect("sender drop which should not drop here");
+                    .expect("sender droped which should not drop here.");
             }
             Response::Delete(node) => {
-                log::info!("operation success");
+                log::info!("operation delete success.");
                 s.send(Update::DeleteNode(node))
-                    .expect("sender drop which should not drop here");
+                    .expect("sender droped which should not drop here.");
             }
             Response::Post(node) | Response::Update(node) => {
-                log::info!("operation success");
+                log::info!("operation post/update success.");
                 s.send(Update::Nodes(vec![node]))
-                    .expect("sender drop which should not drop here");
+                    .expect("sender droped which should not drop here.");
                 // do nothing
             }
         }

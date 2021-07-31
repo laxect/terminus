@@ -1,6 +1,9 @@
 use crate::message::Update;
 use crossbeam_channel::Sender;
-use std::{io::stdin, sync::atomic::{AtomicBool, Ordering}};
+use std::{
+    io::stdin,
+    sync::atomic::{AtomicBool, Ordering},
+};
 use termion::{
     event::{Event, Key},
     input::TermRead,

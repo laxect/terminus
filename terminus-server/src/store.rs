@@ -118,8 +118,8 @@ pub(crate) fn post(node: Node) -> anyhow::Result<Response> {
     Ok(Response::Post(resp_node))
 }
 
-const ROOT_START: &[u8] = &[0; 24];
-const ROOT_END: &[u8] = &[255; 24];
+const ROOT_START: &[u8] = &[0; 16];
+const ROOT_END: &[u8] = &[255; 16];
 
 pub(crate) fn list_root() -> anyhow::Result<Response> {
     let tree = DB.open_tree(CONTENT_TREE)?;

@@ -1,9 +1,11 @@
 use std::{fs::OpenOptions, thread};
 
-mod ui;
+use message::Request;
+
 mod event;
-mod store;
 mod message;
+mod store;
+mod ui;
 
 fn main() {
     // log file
@@ -30,6 +32,8 @@ fn main() {
             log::error!("backend message failed: {}", e);
         }
     });
+    let req = Request::ListRoot;
+    req.send(&s_main).expect("inital list failed.");
     if let Err(e) = ui::run(s_main, r_main) {
         log::error!("tui failed: {}", e);
     }

@@ -71,6 +71,10 @@ impl Author {
             Pass::Pass(ref inner_pass) => inner_pass == pass,
         }
     }
+
+    pub fn encode_pass(&self, len: usize) -> String {
+        blake3::hash(self.pass.get_pass().as_bytes()).to_hex()[0..len].to_ascii_lowercase()
+    }
 }
 
 pub type NodeId = Vec<u8>;
