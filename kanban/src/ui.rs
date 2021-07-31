@@ -2,6 +2,7 @@ use crate::{
     message::{self, Request, Update},
     store::Store,
 };
+use chrono::Local;
 use crossbeam_channel::{Receiver, Sender};
 use std::io::stdout;
 use terminus_types::{Node, NodeId};
@@ -10,7 +11,7 @@ use tui::{
     backend::{Backend, TermionBackend},
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
-    text::{Span, Spans},
+    text::{Span, Spans, Text},
     widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
     Frame, Terminal,
 };
@@ -51,9 +52,20 @@ impl App<'_> {
         })
     }
 
+    fn draw_title<'a>(mut title: String, width: usize) -> Text<'a> {
+        // start from '# '.
+        let width = width - 2;
+        title.insert_str(0, "# ");
+        Text::styled(
+            title,
+            Style::default().add_modifier(Modifier::BOLD).fg(Color::Rgb(0, 0, 0)),
+        )
+    }
+
     fn draw_node<'a>(mut node: Node, width: usize) -> ListItem<'a> {
         node.author.mask();
-        let title = Spans::from(Span::styled(node.title, Style::default().add_modifier(Modifier::BOLD)));
+        // title
+        let mut text = Self::draw_title(node.title, width);
         // author part
         let edited = if node.edited {
             Color::LightCyan
@@ -66,12 +78,14 @@ impl App<'_> {
         let splt_sym = Span::from("#");
         let at_sym = Span::styled(" @ ", Style::default().add_modifier(Modifier::BOLD).fg(Color::LightRed));
         let publish_time = Span::styled(
-            node.publish_time.to_rfc3339(),
+            node.publish_time
+                .with_timezone(&Local)
+                .to_rfc3339_opts(chrono::SecondsFormat::Secs, false),
             Style::default().add_modifier(Modifier::ITALIC),
         );
         let mut author_line = vec![edited, author, splt_sym, id, at_sym, publish_time];
         let line_width: usize = author_line.iter().map(|sp| sp.width()).sum();
-        let blank_len = width - line_width - 2;
+        let blank_len = width - line_width;
         if blank_len > 0 {
             let blank = vec![' ' as u8; blank_len];
             let blank = String::from_utf8(blank).unwrap();
@@ -79,7 +93,7 @@ impl App<'_> {
         }
         // content part
         let content = Spans::from(node.content);
-        let text = vec![title, content, Spans::from(author_line)];
+        text.extend(Text::from(vec![content, Spans::from(author_line)]));
         ListItem::new(text).style(Style::default())
     }
 
@@ -89,12 +103,13 @@ impl App<'_> {
         }
         self.diff.list = false;
         // node
+        let main = Block::default().borders(Borders::ALL);
+        let inner_width = main.inner(area).width;
         let mut list = Vec::new();
         for node in &self.list {
-            list.push(Self::draw_node(node.clone(), area.width as usize));
+            list.push(Self::draw_node(node.clone(), inner_width as usize));
         }
         // List
-        let main = Block::default().borders(Borders::ALL);
         let list = List::new(list).block(main);
         f.render_widget(list, area);
     }

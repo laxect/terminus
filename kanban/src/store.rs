@@ -36,6 +36,7 @@ impl Store {
             res.push(item);
         }
         res.sort_unstable_by_key(|node: &Node| node.last_reply);
+        res.reverse();
         Ok(res)
     }
 
