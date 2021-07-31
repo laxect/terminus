@@ -44,7 +44,7 @@ impl Author {
     }
 }
 
-pub type NodeId = Vec<u128>;
+pub type NodeId = Vec<u8>;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Node {
@@ -94,9 +94,10 @@ impl Author {
 }
 
 impl Node {
-    pub fn new(parent_id: &[u128], title: String, author: Author, content: String, tail: u64) -> Self {
+    pub fn new(parent_id: &[u8], title: String, author: Author, content: String, tail: u64) -> Self {
         let mut id = parent_id.to_owned();
-        id.push(get_id(tail as u128));
+        let mut node_id = bincode::serialize(&get_id(tail as u128)).unwrap();
+        id.append(&mut node_id);
         let now = Utc::now();
         Self {
             id,
@@ -136,7 +137,19 @@ impl Node {
     /// the last part of id.
     pub fn last_id(&self) -> Result<u128> {
         // should always have one
-        self.id.last().ok_or(Error::IdInvalid).map(|x| *x)
+        let last = self.id.get(self.id.len() - 16..);
+        bincode::deserialize(last.ok_or_else(|| Error::IdInvalid)?).map_err(|_| Error::IdInvalid)
+    }
+
+    pub fn top_id(&self) -> Result<u128> {
+        // should always have one
+        let last = self.id.get(..16);
+        bincode::deserialize(last.ok_or_else(|| Error::IdInvalid)?).map_err(|_| Error::IdInvalid)
+    }
+
+    pub fn top_id_bin(&self) -> Result<Vec<u8>> {
+        // should always have one
+        Ok(self.id.get(..16).ok_or(Error::IdInvalid)?.to_owned())
     }
 }
 

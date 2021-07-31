@@ -1,8 +1,9 @@
 use std::{fs::OpenOptions, thread};
 
-mod event;
-mod message;
 mod ui;
+mod event;
+mod store;
+mod message;
 
 fn main() {
     // log file

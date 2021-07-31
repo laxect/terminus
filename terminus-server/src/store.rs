@@ -38,8 +38,7 @@ impl From<NodeBody> for IVec {
     }
 }
 
-type NodeIdBin = Vec<u8>;
-fn disperse_node(node: Node) -> anyhow::Result<(NodeIdBin, NodeBody)> {
+fn disperse_node(node: Node) -> anyhow::Result<(NodeId, NodeBody)> {
     let Node {
         id,
         title,
@@ -49,7 +48,6 @@ fn disperse_node(node: Node) -> anyhow::Result<(NodeIdBin, NodeBody)> {
         last_reply,
         edited,
     } = node;
-    let id = bincode::serialize(&id)?;
     let body = NodeBody {
         title,
         author,
@@ -62,7 +60,6 @@ fn disperse_node(node: Node) -> anyhow::Result<(NodeIdBin, NodeBody)> {
 }
 
 fn assemble_node(id: &[u8], body: &[u8]) -> anyhow::Result<Node> {
-    let id = bincode::deserialize(id)?;
     let NodeBody {
         title,
         author,
@@ -72,7 +69,7 @@ fn assemble_node(id: &[u8], body: &[u8]) -> anyhow::Result<Node> {
         edited,
     } = bincode::deserialize(body)?;
     Ok(Node {
-        id,
+        id: id.to_owned(),
         title,
         author,
         content,
@@ -88,24 +85,17 @@ static DB: Lazy<Db> = Lazy::new(|| sled::open("database").unwrap());
 pub(crate) fn post(node: Node) -> anyhow::Result<Response> {
     let resp_node = node.clone();
     // should have one
-    if let Some(node_id) = node.id.last() {
-        log::info!("[post] new post: {}.", node_id);
-    } else {
-        return Ok(Response::Err(Error::IdInvalid));
-    }
+    let node_id = node.last_id()?;
+    log::info!("[post] new post: {}.", node_id);
     // should have one
-    let top_id = if let Some(id) = node.id.first() {
-        bincode::serialize(&id)?
-    } else {
-        return Ok(Response::Err(Error::IdInvalid));
-    };
+    let top_id_bin = node.top_id_bin()?;
     let (id, mut body) = disperse_node(node)?;
     body.update_publish_time();
     let tree = DB.open_tree(CONTENT_TREE)?;
     if tree.contains_key(&id)? {
         return Ok(Response::Err(Error::NodeExist));
     }
-    let top = tree.get(&top_id)?;
+    let top = tree.get(&top_id_bin)?;
     let mut top: NodeBody = if let Some(top) = top {
         bincode::deserialize(&top)?
     } else {
@@ -113,7 +103,7 @@ pub(crate) fn post(node: Node) -> anyhow::Result<Response> {
     };
     top.last_reply = body.publish_time;
     let mut batch = Batch::default();
-    batch.insert(top_id, top);
+    batch.insert(top_id_bin, top);
     batch.insert(id, body);
     tree.apply_batch(batch)?;
     Ok(Response::Post(resp_node))
@@ -134,9 +124,8 @@ pub(crate) fn list_root() -> anyhow::Result<Response> {
 }
 
 pub(crate) fn list(root: NodeId) -> anyhow::Result<Response> {
-    let root_id = bincode::serialize(&root)?;
     let tree = DB.open_tree(CONTENT_TREE)?;
-    let list = tree.scan_prefix(root_id);
+    let list = tree.scan_prefix(root);
     let mut res = Vec::new();
     for item in list {
         let (id, body) = item?;
@@ -156,7 +145,7 @@ where
     log::info!("[{}] node {}.", action, target_id);
     // prepare
     let (id, mut body) = disperse_node(node)?;
-    // really delete
+    // really do
     let tree = DB.open_tree(CONTENT_TREE)?;
     if let Some(old_body) = tree.get(&id)? {
         let old_body: NodeBody = bincode::deserialize(&old_body)?;
