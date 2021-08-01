@@ -15,6 +15,8 @@ pub enum Error {
     PassNotMatch,
     #[error("node is too old to delete")]
     DeleteLimitOverdue,
+    #[error("can not link to peer")]
+    NetworkError,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

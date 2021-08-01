@@ -289,7 +289,6 @@ pub(crate) fn run(s: Sender<Request>, r: Receiver<Update>) -> anyhow::Result<()>
     // set up app
     let mut app = App::default();
     loop {
-        app.set_info(format!("{:?}", app.state));
         terminal.draw(|f| app.draw(f))?;
         let event = r.recv()?;
         match event {

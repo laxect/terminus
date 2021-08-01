@@ -13,11 +13,12 @@ use tokio::{
 
 #[derive(Debug)]
 pub(crate) enum Request {
+    Relink,
     ListRoot,
-    List(NodeId),
     Post(Node),
     Update(Node),
     Delete(Node),
+    List(NodeId),
     // graceful exit,
     Shutdown,
 }
@@ -37,7 +38,7 @@ impl From<Request> for Action {
             Request::Post(node) => Self::Post(node),
             Request::Update(node) => Self::Update(node),
             Request::Delete(node) => Self::Delete(node),
-            Request::Shutdown => unreachable!(),
+            _ => unreachable!(),
         }
     }
 }
@@ -132,9 +133,23 @@ async fn send(s: Sender<Update>, r: Receiver<Request>) -> anyhow::Result<()> {
 
 pub(crate) fn handle(s: Sender<Update>, r: Receiver<Request>) -> anyhow::Result<()> {
     let async_rt = Runtime::new().expect("runtime start up failed");
-    while let Err(e) = async_rt.block_on(send(s.clone(), r.clone())) {
-        sleep(Duration::from_millis(200));
-        log::error!("link failed: {}.", e);
+    loop {
+        if let Err(e) = async_rt.block_on(send(s.clone(), r.clone())) {
+            log::error!("link failed: {}", e);
+            let error = Update::Err(Error::NetworkError);
+            s.send(error).unwrap();
+        } else {
+            return Ok(());
+        }
+        // until a relink request
+        loop {
+            let req = r.recv()?;
+            if req.is_shutdown() {
+                return Ok(());
+            }
+            if matches!(req, Request::Relink) {
+                break;
+            }
+        }
     }
-    Ok(())
 }
