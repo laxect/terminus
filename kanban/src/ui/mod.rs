@@ -134,9 +134,8 @@ impl App<'_> {
         let line_width: usize = author_line.iter().map(|sp| sp.width()).sum();
         let blank_len = width - line_width;
         if blank_len > 0 {
-            let blank = vec![' ' as u8; blank_len];
-            let blank = String::from_utf8(blank).unwrap();
-            author_line.insert(0, Span::from(blank));
+            let blank_len = std::cmp::min(blank_len, BLANK.len());
+            author_line.insert(0, Span::from(&BLANK[0..blank_len]));
         }
         // content part
         let max_content_height = if let State::Root = self.state { Some(3) } else { None };
