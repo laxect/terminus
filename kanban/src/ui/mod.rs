@@ -216,7 +216,8 @@ impl App<'_> {
                 self.list_state.select(next);
             }
         } else {
-            self.list_state.select(if self.list.is_empty() { None } else { Some(0) });
+            self.list_state
+                .select(if self.list.is_empty() { None } else { Some(0) });
         }
         Ok(())
     }
