@@ -255,6 +255,7 @@ dependencies = [
  "toml_edit",
  "tui",
  "unicode-segmentation",
+ "unicode-width",
 ]
 
 [[package]]

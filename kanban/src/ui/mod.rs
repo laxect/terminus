@@ -4,6 +4,7 @@ use crate::{
 };
 use chrono::Local;
 use crossbeam_channel::{Receiver, Sender};
+use split::UnicodeSplit;
 use std::io::stdout;
 use terminus_types::{Node, NodeId};
 use termion::{raw::IntoRawMode, screen::AlternateScreen};
@@ -12,9 +13,12 @@ use tui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Span, Spans, Text},
-    widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
+    widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap},
     Frame, Terminal,
 };
+use unicode_width::UnicodeWidthStr;
+
+mod split;
 
 enum State {
     Root,
@@ -31,6 +35,7 @@ struct App<'a> {
     state: State,
     diff: AppDiff,
     list: Vec<Node>,
+    list_state: ListState,
     store: Store,
     info: Spans<'a>,
 }
@@ -41,6 +46,7 @@ impl Default for App<'_> {
     }
 }
 
+const BLANK: &str = "                                                     ";
 impl App<'_> {
     fn new() -> anyhow::Result<Self> {
         Ok(Self {
@@ -48,24 +54,71 @@ impl App<'_> {
             list: Vec::new(),
             store: Store::new()?,
             info: Self::default_info(),
+            list_state: ListState::default(),
             diff: AppDiff { info: true, list: true },
         })
     }
 
-    fn draw_title<'a>(mut title: String, width: usize) -> Text<'a> {
+    fn draw_title<'a>(title: String, width: usize, mut space: usize) -> Text<'a> {
+        space = std::cmp::min(space, BLANK.len());
+        let color = space as u8;
+        let color = Color::Rgb(color, color, color);
         // start from '# '.
-        let width = width - 2;
-        title.insert_str(0, "# ");
-        Text::styled(
-            title,
-            Style::default().add_modifier(Modifier::BOLD).fg(Color::Rgb(0, 0, 0)),
-        )
+        let width = width - 2 - space;
+        let mut title = title.unicode_split(width);
+        let first = title.next().unwrap_or_default().to_owned();
+        let first = Spans::from(vec![
+            Span::from(&BLANK[0..space]),
+            Span::styled("# ", Style::default().add_modifier(Modifier::BOLD).fg(color)),
+            Span::styled(first, Style::default().add_modifier(Modifier::BOLD).fg(color)),
+        ]);
+        let mut lines = vec![first];
+        while let Some(line) = title.next() {
+            let line = Spans::from(vec![
+                Span::from(&BLANK[0..space]),
+                Span::styled("  ", Style::default().add_modifier(Modifier::BOLD).fg(color)),
+                Span::styled(
+                    line.trim_start().to_owned(),
+                    Style::default().add_modifier(Modifier::BOLD).fg(color),
+                ),
+            ]);
+            lines.push(line);
+        }
+        Text::from(lines)
     }
 
-    fn draw_node<'a>(mut node: Node, width: usize) -> ListItem<'a> {
+    fn draw_content<'a>(content: String, width: usize, mut space: usize, max_height: Option<usize>) -> Text<'a> {
+        space = std::cmp::min(space, BLANK.len());
+        let width = width - space;
+        let blank = ["\n", &BLANK[..space]].concat();
+        let split = content.unicode_split(width);
+        let mut content = if let Some(max_height) = max_height {
+            let mut content = split
+                .take(max_height)
+                .map(|str| str.trim_start())
+                .collect::<Vec<&str>>()
+                .join(&blank);
+            if content.width_cjk() > width * 2 + (width / 2) {
+                content.pop();
+                content.pop();
+                content.pop();
+                content.pop();
+                content.push_str("……");
+            }
+            content
+        } else {
+            split.map(|str| str.trim_start()).collect::<Vec<&str>>().join(&blank)
+        };
+        content.insert_str(0, &BLANK[0..space]);
+        Text::from(content)
+    }
+
+    fn draw_node<'a>(&self, mut node: Node, width: usize) -> ListItem<'a> {
         node.author.mask();
+        let level = node.id.len() / 16;
+        let spaces = level.saturating_sub(1) * 2;
         // title
-        let mut text = Self::draw_title(node.title, width);
+        let mut text = Self::draw_title(node.title, width, spaces);
         // author part
         let edited = if node.edited {
             Color::LightCyan
@@ -92,8 +145,9 @@ impl App<'_> {
             author_line.insert(0, Span::from(blank));
         }
         // content part
-        let content = Spans::from(node.content);
-        text.extend(Text::from(vec![content, Spans::from(author_line)]));
+        let max_content_height = if let State::Root = self.state { Some(3) } else { None };
+        text.extend(Self::draw_content(node.content, width, spaces, max_content_height));
+        text.extend(Text::from(Spans::from(author_line)));
         ListItem::new(text).style(Style::default())
     }
 
@@ -107,11 +161,20 @@ impl App<'_> {
         let inner_width = main.inner(area).width;
         let mut list = Vec::new();
         for node in &self.list {
-            list.push(Self::draw_node(node.clone(), inner_width as usize));
+            list.push(self.draw_node(node.clone(), inner_width as usize));
         }
         // List
-        let list = List::new(list).block(main);
-        f.render_widget(list, area);
+        let mut now = self.list_state.selected();
+        if let Some(now) = now.as_mut() {
+            if *now > list.len() {
+                let next = list.len().checked_sub(1);
+                self.list_state.select(next);
+            }
+        } else {
+            self.list_state.select(if list.is_empty() { None } else { Some(0) });
+        }
+        let list = List::new(list).block(main).highlight_style(Style::default().bg(Color::Rgb(235, 235, 235)));
+        f.render_stateful_widget(list, area, &mut self.list_state);
     }
 
     fn default_info<'a>() -> Spans<'a> {
