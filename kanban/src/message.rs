@@ -52,6 +52,10 @@ impl Request {
 #[derive(Debug)]
 pub(crate) enum Update {
     Quit,
+    Next,
+    Prev,
+    Parent,
+    Child,
     Nodes(Vec<Node>),
     DeleteNode(Node),
     Err(Error),

@@ -1,5 +1,5 @@
 use crate::{
-    message::{self, Request, Update},
+    message::{Request, Update},
     store::Store,
 };
 use chrono::Local;
@@ -20,22 +20,17 @@ use unicode_width::UnicodeWidthStr;
 
 mod split;
 
+#[derive(Debug)]
 enum State {
     Root,
     Node(NodeId),
 }
 
-#[derive(Default)]
-struct AppDiff {
-    list: bool,
-    info: bool,
-}
-
 struct App<'a> {
     state: State,
-    diff: AppDiff,
     list: Vec<Node>,
     list_state: ListState,
+    cur_stack: Vec<usize>,
     store: Store,
     info: Spans<'a>,
 }
@@ -53,9 +48,9 @@ impl App<'_> {
             state: State::Root,
             list: Vec::new(),
             store: Store::new()?,
+            cur_stack: Vec::new(),
             info: Self::default_info(),
             list_state: ListState::default(),
-            diff: AppDiff { info: true, list: true },
         })
     }
 
@@ -99,10 +94,9 @@ impl App<'_> {
                 .collect::<Vec<&str>>()
                 .join(&blank);
             if content.width_cjk() > width * 2 + (width / 2) {
-                content.pop();
-                content.pop();
-                content.pop();
-                content.pop();
+                for _i in 0..4 {
+                    content.pop();
+                }
                 content.push_str("……");
             }
             content
@@ -152,10 +146,6 @@ impl App<'_> {
     }
 
     fn draw_list<B: Backend>(&mut self, f: &mut Frame<B>, area: Rect) {
-        if !self.diff.list {
-            return;
-        }
-        self.diff.list = false;
         // node
         let main = Block::default().borders(Borders::ALL);
         let inner_width = main.inner(area).width;
@@ -166,14 +156,16 @@ impl App<'_> {
         // List
         let mut now = self.list_state.selected();
         if let Some(now) = now.as_mut() {
-            if *now > list.len() {
+            if *now >= list.len() {
                 let next = list.len().checked_sub(1);
                 self.list_state.select(next);
             }
         } else {
             self.list_state.select(if list.is_empty() { None } else { Some(0) });
         }
-        let list = List::new(list).block(main).highlight_style(Style::default().bg(Color::Rgb(235, 235, 235)));
+        let list = List::new(list)
+            .block(main)
+            .highlight_style(Style::default().bg(Color::Rgb(235, 235, 235)));
         f.render_stateful_widget(list, area, &mut self.list_state);
     }
 
@@ -186,10 +178,6 @@ impl App<'_> {
     }
 
     fn draw_info<B: Backend>(&mut self, f: &mut Frame<B>, area: Rect) {
-        if !self.diff.info {
-            return;
-        }
-        self.diff.info = false;
         let infomation_block = Block::default().borders(Borders::ALL);
         let info = Paragraph::new(self.info.clone())
             .block(infomation_block)
@@ -200,13 +188,11 @@ impl App<'_> {
     fn set_info(&mut self, msg: String) {
         let info = Spans::from(vec![Span::from(msg)]);
         self.info = info;
-        self.diff.info = true;
     }
 
     fn set_info_err(&mut self, err: String) {
         let info = Spans::from(vec![Span::styled(err, Style::default().fg(Color::LightRed))]);
         self.info = info;
-        self.diff.info = true;
     }
 
     fn draw<B: Backend>(&mut self, f: &mut Frame<B>) {
@@ -231,12 +217,70 @@ impl App<'_> {
                 self.list = self.store.list(node)?;
             }
         }
-        self.diff.list = true;
         Ok(())
+    }
+
+    fn next(&mut self) {
+        let max = self.list.len();
+        if let Some(mut now) = self.list_state.selected() {
+            now += 1;
+            if now >= max {
+                now = 0;
+            }
+            self.list_state.select(Some(now));
+        }
+    }
+
+    fn prev(&mut self) {
+        let max = self.list.len();
+        if let Some(mut now) = self.list_state.selected() {
+            if now == 0 {
+                now = max;
+            }
+            now -= 1;
+            self.list_state.select(Some(now));
+        }
+    }
+
+    fn go_down(&mut self, s: &Sender<Request>) {
+        let now = if let Some(now) = self.list_state.selected() {
+            now
+        } else {
+            return;
+        };
+        self.cur_stack.push(now);
+        self.list_state = ListState::default();
+        self.list_state.select(Some(0));
+        let node_id = self.list[now].id.to_owned();
+        self.state = State::Node(node_id.clone());
+        let req = Request::List(node_id);
+        req.send(s).unwrap();
+    }
+
+    fn go_above(&mut self, s: &Sender<Request>) {
+        let node_id = if let State::Node(ref id) = self.state {
+            id.to_owned()
+        } else {
+            return;
+        };
+        // check length
+        let length = node_id.len();
+        let prev_cur = self.cur_stack.pop();
+        self.list_state = ListState::default();
+        self.list_state.select(Some(0));
+        self.list_state.select(prev_cur);
+        let req = if length <= 16 {
+            self.state = State::Root;
+            Request::ListRoot
+        } else {
+            self.state = State::Node(node_id[..length - 16].to_owned());
+            Request::List(node_id)
+        };
+        req.send(s).unwrap();
     }
 }
 
-pub(crate) fn run(s: Sender<message::Request>, r: Receiver<message::Update>) -> anyhow::Result<()> {
+pub(crate) fn run(s: Sender<Request>, r: Receiver<Update>) -> anyhow::Result<()> {
     let stdout = stdout().into_raw_mode()?;
     let stdout = AlternateScreen::from(stdout);
     let backend = TermionBackend::new(stdout);
@@ -244,15 +288,10 @@ pub(crate) fn run(s: Sender<message::Request>, r: Receiver<message::Update>) -> 
     // set up app
     let mut app = App::default();
     loop {
+        app.set_info(format!("{:?}", app.state));
         terminal.draw(|f| app.draw(f))?;
         let event = r.recv()?;
         match event {
-            Update::Quit => {
-                let req = Request::Shutdown;
-                // result is not important.
-                req.send(&s).ok();
-                break;
-            }
             Update::Err(e) => {
                 app.set_info_err(e.to_string());
             }
@@ -267,6 +306,27 @@ pub(crate) fn run(s: Sender<message::Request>, r: Receiver<message::Update>) -> 
                 app.store.delete(node).ok();
                 app.refesh_list()?;
                 app.set_info("delete received".to_string());
+            }
+            Update::Quit => {
+                // press 'q'
+                let req = Request::Shutdown;
+                // result is not important.
+                req.send(&s).ok();
+                break;
+            }
+            Update::Next => {
+                app.next();
+            }
+            Update::Prev => {
+                app.prev();
+            }
+            Update::Child => {
+                app.go_down(&s);
+                app.refesh_list()?;
+            }
+            Update::Parent => {
+                app.go_above(&s);
+                app.refesh_list()?;
             }
         }
     }
