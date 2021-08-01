@@ -5,7 +5,7 @@ use crate::{
 use chrono::Local;
 use crossbeam_channel::{Receiver, Sender};
 use split::UnicodeSplit;
-use std::io::stdout;
+use std::{io::stdout, mem::swap};
 use terminus_types::{Node, NodeId};
 use termion::{raw::IntoRawMode, screen::AlternateScreen};
 use tui::{
@@ -30,7 +30,7 @@ struct App<'a> {
     state: State,
     list: Vec<Node>,
     list_state: ListState,
-    cur_stack: Vec<usize>,
+    cur_stack: Vec<ListState>,
     store: Store,
     info: Spans<'a>,
 }
@@ -154,15 +154,6 @@ impl App<'_> {
             list.push(self.draw_node(node.clone(), inner_width as usize));
         }
         // List
-        let mut now = self.list_state.selected();
-        if let Some(now) = now.as_mut() {
-            if *now >= list.len() {
-                let next = list.len().checked_sub(1);
-                self.list_state.select(next);
-            }
-        } else {
-            self.list_state.select(if list.is_empty() { None } else { Some(0) });
-        }
         let list = List::new(list)
             .block(main)
             .highlight_style(Style::default().bg(Color::Rgb(235, 235, 235)));
@@ -217,6 +208,16 @@ impl App<'_> {
                 self.list = self.store.list(node)?;
             }
         }
+        let now = self.list_state.selected();
+        if let Some(now) = now {
+            if now >= self.list.len() {
+                let next = self.list.len().checked_sub(1);
+                self.list_state = ListState::default();
+                self.list_state.select(next);
+            }
+        } else {
+            self.list_state.select(if self.list.is_empty() { None } else { Some(0) });
+        }
         Ok(())
     }
 
@@ -248,9 +249,10 @@ impl App<'_> {
         } else {
             return;
         };
-        self.cur_stack.push(now);
-        self.list_state = ListState::default();
-        self.list_state.select(Some(0));
+        let mut new_list_state = ListState::default();
+        new_list_state.select(Some(0));
+        swap(&mut self.list_state, &mut new_list_state);
+        self.cur_stack.push(new_list_state);
         let node_id = self.list[now].id.to_owned();
         self.state = State::Node(node_id.clone());
         let req = Request::List(node_id);
@@ -265,10 +267,8 @@ impl App<'_> {
         };
         // check length
         let length = node_id.len();
-        let prev_cur = self.cur_stack.pop();
-        self.list_state = ListState::default();
-        self.list_state.select(Some(0));
-        self.list_state.select(prev_cur);
+        let prev_cur = self.cur_stack.pop().unwrap_or_default();
+        self.list_state = prev_cur;
         let req = if length <= 16 {
             self.state = State::Root;
             Request::ListRoot
