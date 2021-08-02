@@ -2,6 +2,7 @@ use std::{fs::OpenOptions, thread};
 
 use message::Request;
 
+mod config;
 mod event;
 mod message;
 mod store;

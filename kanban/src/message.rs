@@ -1,5 +1,5 @@
 use crossbeam_channel::{Receiver, Sender};
-use std::{thread::sleep, time::Duration};
+use std::time::Duration;
 use terminus_types::{
     action::{Action, ListTarget, Response},
     Error, Node, NodeId,
@@ -51,15 +51,44 @@ impl Request {
 }
 
 #[derive(Debug)]
-pub(crate) enum Update {
-    Quit,
+pub(crate) enum EditPanel {
+    Post,
+    Reply,
+}
+
+#[derive(Debug)]
+pub(crate) enum OpenPanel {
+    EditPanel(EditPanel),
+    Setting,
+}
+
+#[derive(Debug)]
+pub(crate) enum Move {
+    Top,
+    Bottom,
     Next,
     Prev,
-    Parent,
     Child,
+    Parent,
+}
+
+#[derive(Debug)]
+pub(crate) enum PanelAction {
+    Cancel,
+    Confirm,
+}
+
+#[derive(Debug)]
+pub(crate) enum Update {
+    Quit,
+    Edit(bool),
+    Move(Move),
+    Err(Error),
+    Input(char),
     Nodes(Vec<Node>),
     DeleteNode(Node),
-    Err(Error),
+    OpenPanel(OpenPanel),
+    PanelAction(PanelAction),
 }
 
 /// link start!

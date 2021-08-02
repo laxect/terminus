@@ -1,48 +1,105 @@
-use crate::message::Update;
+use crate::message::{EditPanel, Move, OpenPanel, PanelAction, Update};
 use crossbeam_channel::Sender;
-use std::{
-    io::stdin,
-    sync::atomic::{AtomicBool, Ordering},
-};
+use crossbeam_utils::atomic::AtomicCell;
+use std::io::stdin;
 use termion::{
     event::{Event, Key},
     input::TermRead,
 };
 
-static INPUT_MODE: AtomicBool = AtomicBool::new(false);
+static MODE: AtomicCell<Mode> = AtomicCell::new(Mode::Normal);
 
-fn handle_input(_s: &Sender<Update>) -> anyhow::Result<()> {
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Mode {
+    Normal = 0,
+    Panel = 1,
+    Input = 2,
+}
+
+fn set_mode(on: Mode) {
+    MODE.store(on);
+}
+
+fn handle_input(s: &Sender<Update>, c: Event) -> anyhow::Result<()> {
+    match c {
+        Event::Key(Key::Esc) => {
+            s.send(Update::Edit(false))?;
+            set_mode(Mode::Panel);
+        }
+        Event::Key(Key::Char(ch)) => {
+            s.send(Update::Input(ch))?;
+        }
+        _ => {}
+    }
     Ok(())
 }
 
-pub(crate) fn set_input_mode(on: bool) {
-    INPUT_MODE.store(on, Ordering::Release);
+fn handle_panel(s: &Sender<Update>, c: Event) -> anyhow::Result<()> {
+    match c {
+        Event::Key(Key::Char('j')) => {
+            s.send(Update::Move(Move::Next))?;
+        }
+        Event::Key(Key::Char('k')) => {
+            s.send(Update::Move(Move::Prev))?;
+        }
+        Event::Key(Key::Char('e')) => {
+            s.send(Update::Edit(true))?;
+            set_mode(Mode::Input);
+        }
+        Event::Key(Key::Char('q')) => {
+            s.send(Update::PanelAction(PanelAction::Cancel))?;
+            set_mode(Mode::Normal);
+        }
+        Event::Key(Key::Char('\n')) => {
+            s.send(Update::PanelAction(PanelAction::Confirm))?;
+            set_mode(Mode::Normal);
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 pub(crate) fn handle(s: Sender<Update>) -> anyhow::Result<()> {
     let stdin = stdin();
     for c in stdin.events() {
-        if INPUT_MODE.load(Ordering::Acquire) {
-            handle_input(&s)?;
+        let c = c?;
+        let mode: Mode = MODE.load();
+        if mode == Mode::Input {
+            handle_input(&s, c)?;
+            continue;
+        } else if mode == Mode::Panel {
+            handle_panel(&s, c)?;
             continue;
         }
-        let c = c?;
         match c {
             Event::Key(Key::Char('q')) => {
                 s.send(Update::Quit)?;
                 return Ok(());
             }
             Event::Key(Key::Char('j')) => {
-                s.send(Update::Next)?;
+                s.send(Update::Move(Move::Next))?;
             }
             Event::Key(Key::Char('k')) => {
-                s.send(Update::Prev)?;
+                s.send(Update::Move(Move::Prev))?;
             }
             Event::Key(Key::Char('h')) => {
-                s.send(Update::Parent)?;
+                s.send(Update::Move(Move::Parent))?;
             }
             Event::Key(Key::Char('l')) => {
-                s.send(Update::Child)?;
+                s.send(Update::Move(Move::Child))?;
+            }
+            Event::Key(Key::Char('s')) => {
+                s.send(Update::OpenPanel(OpenPanel::Setting))?;
+                set_mode(Mode::Panel);
+            }
+            Event::Key(Key::Char('p')) => {
+                s.send(Update::OpenPanel(OpenPanel::EditPanel(EditPanel::Post)))?;
+                set_mode(Mode::Panel);
+            }
+            Event::Key(Key::Char('r')) => {
+                s.send(Update::OpenPanel(OpenPanel::EditPanel(EditPanel::Reply)))?;
+                set_mode(Mode::Panel);
             }
             _ => {
                 log::trace!("{:?} received.", c);

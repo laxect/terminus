@@ -1,9 +1,11 @@
 use crate::{
-    message::{Request, Update},
+    config::Config,
+    message::{Move, Request, Update},
     store::Store,
 };
 use chrono::Local;
 use crossbeam_channel::{Receiver, Sender};
+use panel::Panel;
 use split::UnicodeSplit;
 use std::{io::stdout, mem::swap};
 use terminus_types::{Node, NodeId};
@@ -18,21 +20,29 @@ use tui::{
 };
 use unicode_width::UnicodeWidthStr;
 
+mod edit_panel;
+mod panel;
+mod setting;
 mod split;
 
 #[derive(Debug)]
 enum State {
     Root,
     Node(NodeId),
+    Setting,
+    Post,
+    Reply(NodeId),
 }
 
 struct App<'a> {
-    state: State,
     list: Vec<Node>,
+    info: Spans<'a>,
+    state: State,
+    store: Store,
+    panel: Option<Panel>,
+    config: Config,
     list_state: ListState,
     cur_stack: Vec<ListState>,
-    store: Store,
-    info: Spans<'a>,
 }
 
 impl Default for App<'_> {
@@ -45,11 +55,13 @@ const BLANK: &str = "                                                     ";
 impl App<'_> {
     fn new() -> anyhow::Result<Self> {
         Ok(Self {
-            state: State::Root,
             list: Vec::new(),
-            store: Store::new()?,
-            cur_stack: Vec::new(),
             info: Self::default_info(),
+            state: State::Root,
+            store: Store::new()?,
+            panel: None,
+            config: Config::from_file(),
+            cur_stack: Vec::new(),
             list_state: ListState::default(),
         })
     }
@@ -206,6 +218,9 @@ impl App<'_> {
             State::Node(node) => {
                 self.list = self.store.list(node)?;
             }
+            _ => {
+                return Ok(());
+            }
         }
         let now = self.list_state.selected();
         if let Some(now) = now {
@@ -313,20 +328,21 @@ pub(crate) fn run(s: Sender<Request>, r: Receiver<Update>) -> anyhow::Result<()>
                 req.send(&s).ok();
                 break;
             }
-            Update::Next => {
+            Update::Move(Move::Next) => {
                 app.next();
             }
-            Update::Prev => {
+            Update::Move(Move::Prev) => {
                 app.prev();
             }
-            Update::Child => {
+            Update::Move(Move::Child) => {
                 app.go_down(&s);
                 app.refesh_list()?;
             }
-            Update::Parent => {
+            Update::Move(Move::Parent) => {
                 app.go_above(&s);
                 app.refesh_list()?;
             }
+            _ => unreachable!(),
         }
     }
     Ok(())
