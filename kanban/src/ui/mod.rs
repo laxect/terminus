@@ -226,7 +226,6 @@ impl App<'_> {
         if let Some(now) = now {
             if now >= self.list.len() {
                 let next = self.list.len().checked_sub(1);
-                self.list_state = ListState::default();
                 self.list_state.select(next);
             }
         } else {
