@@ -85,6 +85,7 @@ pub(crate) enum Update {
     Move(Move),
     Err(Error),
     Input(char),
+    DeleteChar,
     Nodes(Vec<Node>),
     DeleteNode(Node),
     OpenPanel(OpenPanel),

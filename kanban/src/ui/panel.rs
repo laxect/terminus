@@ -1,34 +1,93 @@
-use tui::{backend::Backend, layout::Rect, Frame};
-
+use super::split::UnicodeSplit;
 use crate::message::{Move, Update};
+use tui::{
+    backend::Backend,
+    layout::{Constraint, Direction, Layout, Rect},
+    style::{Color, Style},
+    text::{Span, Spans},
+    widgets::{Block, Borders, Paragraph, Wrap},
+    Frame,
+};
+use unicode_width::UnicodeWidthStr;
 
-pub(super) struct Input {
+pub(crate) struct Input {
     pub label: String,
     pub input: String, // buffer
     pub multi_line: bool,
 }
 
 impl Input {
-    pub(super) fn new<T: AsRef<str>>(label: T, input: T, multi_line: bool) -> Self {
+    pub(crate) fn new<T: AsRef<str>>(label: T, input: T, multi_line: bool) -> Self {
         Self {
             label: label.as_ref().to_owned(),
             input: input.as_ref().to_owned(),
             multi_line,
         }
     }
+
+    fn draw<B: Backend>(&self, f: &mut Frame<B>, area: Rect, selected: bool, edit: bool) {
+        let mut style = Style::default();
+        style.fg = if selected { Some(Color::LightYellow) } else { None };
+        let block = Block::default()
+            .border_style(style)
+            .borders(Borders::all())
+            .title(Span::raw(&self.label));
+        let width = block.inner(area).width as usize;
+        if self.multi_line {
+            let split = self.input.unicode_split(width);
+            let count = std::cmp::max(split.clone().count(), 3);
+            let mut take: Vec<&str> = split.skip(count - 3).collect();
+            if take.last().map(|str| str.width_cjk()) == Some(width) {
+                take.push("");
+                if take.len() > 3 {
+                    take.remove(0);
+                }
+            }
+            if edit {
+                let y = area.y + 1 + take.len() as u16;
+                let x = area.x + 1 + take.last().map(|str| str.width_cjk() as u16 + 1).unwrap();
+                f.set_cursor(x, y)
+            }
+            let spans: Vec<Span> = take.into_iter().map(|str| Span::raw(str)).collect();
+            let text = Paragraph::new(Spans::from(spans)).block(block);
+            f.render_widget(text, area);
+        } else {
+            let mut width = width - 1;
+            if self.input.len() < width {
+                width = self.input.len();
+            }
+            let show = &self.input[self.input.len() - width..];
+            let input = Span::styled(show, style);
+            let text = Paragraph::new(input).block(block);
+            f.render_widget(text, area);
+            if edit {
+                let x = area.x + 1 + show.width_cjk() as u16;
+                let y = area.y + 1;
+                f.set_cursor(x, y)
+            }
+        }
+    }
+}
+
+pub(super) enum PanelMode {
+    Panel,
+    Info,
+    Diag,
 }
 
 pub(super) struct Panel {
     edit: bool,
     info: String,
     cursor: usize,
+    mode: PanelMode,
     inputs: Vec<Input>,
 }
 
 impl Panel {
-    fn new<T: AsRef<str>>(inputs: Vec<Input>, info: T) -> Self {
+    pub(super) fn new<T: AsRef<str>>(inputs: Vec<Input>, info: T, mode: PanelMode) -> Self {
         assert!(!inputs.is_empty());
         Self {
+            mode,
             inputs,
             cursor: 0,
             edit: false,
@@ -36,7 +95,7 @@ impl Panel {
         }
     }
 
-    fn handle(&mut self, ev: Update) {
+    pub(super) fn handle(&mut self, ev: Update) {
         match ev {
             Update::Edit(flag) => {
                 self.edit = flag;
@@ -59,19 +118,79 @@ impl Panel {
             Update::Input(ch) => {
                 self.inputs[self.cursor].input.push(ch);
             }
-            _ => {}
+            Update::DeleteChar => {
+                self.inputs[self.cursor].input.pop();
+            }
+            _ => unreachable!(),
         }
     }
 
-    fn layout(&self, area: Rect) -> Vec<Rect> {
-        let res = Vec::new();
-        let height: usize = self
+    const MULTI_LINE_HEIGHT: u16 = 4 + 2;
+    fn panel_layout(&self, area: Rect) -> Vec<Rect> {
+        let horizontal = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints(
+                [
+                    Constraint::Percentage(25),
+                    Constraint::Percentage(50),
+                    Constraint::Percentage(25),
+                ]
+                .as_ref(),
+            )
+            .split(area);
+        let height: u16 = self
             .inputs
             .iter()
-            .map(|input| if input.multi_line { 2 + 4 } else { 3 })
+            .map(|input| if input.multi_line { Self::MULTI_LINE_HEIGHT } else { 3 })
             .sum();
-        res
+        // margin 1, info 3.
+        let height = height + 2 + 3;
+        // if height is higher than area, means you should use a bigger terminal.
+        let spaces = area.height.checked_sub(height).unwrap_or_default();
+        let top = spaces / 2;
+        let mut chunks = vec![Constraint::Max(top)];
+        for input in self.inputs.iter() {
+            let block = Constraint::Max(if input.multi_line { Self::MULTI_LINE_HEIGHT } else { 3 });
+            chunks.push(block);
+        }
+        chunks.push(Constraint::Max(5)); // info block
+        chunks.push(Constraint::Max(1)); // space
+        let mut blocks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints(chunks)
+            .split(horizontal[1]);
+        // remove space
+        log::info!("{:?}", &blocks);
+        blocks.remove(0);
+        blocks.remove(blocks.len() - 1);
+        blocks
     }
 
-    pub(super) fn draw<B: Backend>(&self, f: &mut Frame<B>) {}
+    fn draw_panel<B: Backend>(&self, f: &mut Frame<B>) {
+        let terminal = f.size();
+        let mut layout = self.panel_layout(terminal);
+        let info = layout.pop().unwrap();
+        // should always be same length
+        for (ind, (input, area)) in self.inputs.iter().zip(layout.into_iter()).enumerate() {
+            input.draw(f, area, ind == self.cursor, ind == self.cursor && self.edit);
+        }
+        // draw Info
+        let text = Paragraph::new(self.info.as_str())
+            .wrap(Wrap { trim: true })
+            .style(Style::default().fg(Color::LightBlue))
+            .block(Block::default().borders(Borders::all()));
+        f.render_widget(text, info);
+    }
+
+    pub(super) fn draw<B: Backend>(&self, f: &mut Frame<B>) {
+        match self.mode {
+            PanelMode::Panel => self.draw_panel(f),
+            _ => todo!(),
+        }
+    }
+
+    /// Get a reference to the panel's inputs.
+    pub(super) fn inputs(&self) -> &[Input] {
+        self.inputs.as_slice()
+    }
 }

@@ -30,6 +30,9 @@ fn handle_input(s: &Sender<Update>, c: Event) -> anyhow::Result<()> {
         Event::Key(Key::Char(ch)) => {
             s.send(Update::Input(ch))?;
         }
+        Event::Key(Key::Backspace) => {
+            s.send(Update::DeleteChar)?;
+        }
         _ => {}
     }
     Ok(())
@@ -37,17 +40,17 @@ fn handle_input(s: &Sender<Update>, c: Event) -> anyhow::Result<()> {
 
 fn handle_panel(s: &Sender<Update>, c: Event) -> anyhow::Result<()> {
     match c {
-        Event::Key(Key::Char('j')) => {
+        Event::Key(Key::Char('j') | Key::Down) => {
             s.send(Update::Move(Move::Next))?;
         }
-        Event::Key(Key::Char('k')) => {
+        Event::Key(Key::Char('k') | Key::Up) => {
             s.send(Update::Move(Move::Prev))?;
         }
-        Event::Key(Key::Char('e')) => {
+        Event::Key(Key::Char('i' | 'o')) => {
             s.send(Update::Edit(true))?;
             set_mode(Mode::Input);
         }
-        Event::Key(Key::Char('q')) => {
+        Event::Key(Key::Char('q') | Key::Esc) => {
             s.send(Update::PanelAction(PanelAction::Cancel))?;
             set_mode(Mode::Normal);
         }
@@ -77,23 +80,23 @@ pub(crate) fn handle(s: Sender<Update>) -> anyhow::Result<()> {
                 s.send(Update::Quit)?;
                 return Ok(());
             }
-            Event::Key(Key::Char('j')) => {
+            Event::Key(Key::Char('j') | Key::Down) => {
                 s.send(Update::Move(Move::Next))?;
             }
-            Event::Key(Key::Char('k')) => {
+            Event::Key(Key::Char('k') | Key::Up) => {
                 s.send(Update::Move(Move::Prev))?;
             }
-            Event::Key(Key::Char('h')) => {
+            Event::Key(Key::Char('h') | Key::Left) => {
                 s.send(Update::Move(Move::Parent))?;
             }
-            Event::Key(Key::Char('l')) => {
+            Event::Key(Key::Char('l') | Key::Right) => {
                 s.send(Update::Move(Move::Child))?;
             }
             Event::Key(Key::Char('s')) => {
                 s.send(Update::OpenPanel(OpenPanel::Setting))?;
                 set_mode(Mode::Panel);
             }
-            Event::Key(Key::Char('p')) => {
+            Event::Key(Key::Char('p' | 'n')) => {
                 s.send(Update::OpenPanel(OpenPanel::EditPanel(EditPanel::Post)))?;
                 set_mode(Mode::Panel);
             }

@@ -2,6 +2,7 @@ use std::iter::Peekable;
 use unicode_segmentation::{GraphemeIndices, UnicodeSegmentation};
 use unicode_width::UnicodeWidthStr;
 
+#[derive(Clone)]
 pub(crate) struct Split<'a> {
     str: &'a str,
     graph: Peekable<GraphemeIndices<'a>>,

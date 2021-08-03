@@ -1,7 +1,8 @@
 use crate::{
     config::Config,
-    message::{Move, Request, Update},
+    message::{Move, OpenPanel, PanelAction, Request, Update},
     store::Store,
+    ui::panel::PanelMode,
 };
 use chrono::Local;
 use crossbeam_channel::{Receiver, Sender};
@@ -21,7 +22,7 @@ use tui::{
 use unicode_width::UnicodeWidthStr;
 
 mod edit_panel;
-mod panel;
+pub(crate) mod panel;
 mod setting;
 mod split;
 
@@ -198,6 +199,10 @@ impl App<'_> {
     }
 
     fn draw<B: Backend>(&mut self, f: &mut Frame<B>) {
+        if let Some(ref panel) = self.panel {
+            panel.draw(f);
+            return;
+        }
         // get layout
         let size = f.size();
         let chunks = Layout::default()
@@ -304,6 +309,25 @@ pub(crate) fn run(s: Sender<Request>, r: Receiver<Update>) -> anyhow::Result<()>
     loop {
         terminal.draw(|f| app.draw(f))?;
         let event = r.recv()?;
+        if let Some(ref mut panel) = app.panel {
+            match event {
+                Update::PanelAction(PanelAction::Confirm) => {
+                    let inputs = panel.inputs();
+                    match app.state {
+                        State::Setting => app.config.set_val_from_inputs(inputs),
+                        _ => {}
+                    }
+                    app.panel = None;
+                }
+                Update::PanelAction(PanelAction::Cancel) => {
+                    app.panel = None;
+                }
+                _ => {
+                    panel.handle(event);
+                }
+            }
+            continue;
+        }
         match event {
             Update::Err(e) => {
                 app.set_info_err(e.to_string());
@@ -340,6 +364,16 @@ pub(crate) fn run(s: Sender<Request>, r: Receiver<Update>) -> anyhow::Result<()>
             Update::Move(Move::Parent) => {
                 app.go_above(&s);
                 app.refesh_list()?;
+            }
+            Update::OpenPanel(OpenPanel::Setting) => {
+                let inputs = app.config.into_inputs();
+                let panel = Panel::new(
+                    inputs,
+                    "press i for input, ESC for quit, Return for confirm.",
+                    PanelMode::Panel,
+                );
+                app.panel = Some(panel);
+                app.state = State::Setting;
             }
             _ => unreachable!(),
         }

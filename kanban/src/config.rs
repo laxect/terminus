@@ -1,7 +1,9 @@
+use crate::ui::panel::Input;
+
 pub(crate) struct Config {
     pub endpoint: String,
     pub username: String,
-    pub pass: String,
+    pub password: String,
 }
 
 impl Config {
@@ -9,9 +11,34 @@ impl Config {
         Config {
             endpoint: "[::1]:1120".to_owned(),
             username: "名無し".to_owned(),
-            pass: "CzwnmURw8".to_owned(),
+            password: "CzwnmURw8".to_owned(),
         }
     }
 
     pub(crate) fn save_to_file() {}
+
+    pub(crate) fn into_inputs(&self) -> Vec<Input> {
+        vec![
+            Input::new("endpoint", &self.endpoint, false),
+            Input::new("username", &self.username, false),
+            Input::new("password", &self.password, false),
+        ]
+    }
+
+    pub(crate) fn set_val_from_inputs(&mut self, inputs: &[Input]) {
+        for Input { label, input, .. } in inputs {
+            match label.as_str() {
+                "endpoint" => {
+                    self.endpoint = input.to_owned();
+                }
+                "username" => {
+                    self.username = input.to_owned();
+                }
+                "password" => {
+                    self.password = input.to_owned();
+                }
+                _ => unreachable!(),
+            }
+        }
+    }
 }
