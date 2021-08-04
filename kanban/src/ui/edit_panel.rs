@@ -1,12 +1,11 @@
 use super::panel::{Panel, PanelMode};
 use crate::{
-    config::Config,
     message::{self, Request},
     ui::panel::Input,
 };
 use crossbeam_channel::Sender;
 use rand::Rng;
-use terminus_types::Node;
+use terminus_types::{Author, Node};
 
 pub(super) fn edit_panel(info: Option<&str>) -> Panel {
     let inputs = vec![
@@ -26,11 +25,10 @@ pub(super) fn post_node_update(
     s: &Sender<message::Request>,
     node_id: &[u8],
     inputs: &[Input],
-    setting: &Config,
+    author: Author,
 ) -> anyhow::Result<()> {
     let mut rand = rand::thread_rng();
     let tail: u64 = rand.gen();
-    let author = setting.gen_author();
     let mut node = Node::new(node_id, "title".to_string(), author, "content".to_string(), tail);
     for Input { label, input, .. } in inputs {
         match label.as_str() {

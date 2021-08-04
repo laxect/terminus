@@ -1,5 +1,8 @@
 use crossbeam_channel::{Receiver, Sender};
-use std::time::Duration;
+use std::{
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 use terminus_types::{
     action::{Action, ListTarget, Response},
     Error, Node, NodeId,
@@ -10,6 +13,8 @@ use tokio::{
     runtime::Runtime,
     time::timeout,
 };
+
+use crate::config::Config;
 
 #[derive(Debug)]
 pub(crate) enum Request {
@@ -27,6 +32,11 @@ impl Request {
     pub(crate) fn send(self, s: &Sender<Request>) -> anyhow::Result<()> {
         s.send(self)?;
         Ok(())
+    }
+
+    /// Returns `true` if the request is [`Relink`].
+    pub(crate) fn is_relink(&self) -> bool {
+        matches!(self, Self::Relink)
     }
 }
 
@@ -60,6 +70,7 @@ pub(crate) enum EditPanel {
 pub(crate) enum OpenPanel {
     EditPanel(EditPanel),
     Setting,
+    Help,
 }
 
 #[derive(Debug)]
@@ -94,8 +105,9 @@ pub(crate) enum Update {
 
 /// link start!
 /// may upgrade to tls in future.
-async fn link_start() -> anyhow::Result<TcpStream> {
-    Ok(TcpStream::connect("[::1]:1120").await?)
+async fn link_start(endpoint: &str) -> anyhow::Result<TcpStream> {
+    log::info!("try link to {}", endpoint);
+    Ok(TcpStream::connect(endpoint).await?)
 }
 
 /// receive from remote.
@@ -140,11 +152,13 @@ async fn receive(s: Sender<Update>, mut read: OwnedReadHalf) -> anyhow::Result<(
 // u32 0
 const EOS: &[u8] = &[0; 4];
 
-async fn send(s: Sender<Update>, r: Receiver<Request>) -> anyhow::Result<()> {
-    let (read, mut write) = link_start().await?.into_split();
+async fn send(s: Sender<Update>, r: Receiver<Request>, endpoint: &str) -> anyhow::Result<bool> {
+    let mut relink = false;
+    let (read, mut write) = link_start(endpoint).await?.into_split();
     let recv_task = tokio::spawn(receive(s, read));
     while let Ok(req) = r.recv() {
-        if req.is_shutdown() {
+        if req.is_shutdown() || req.is_relink() {
+            relink = req.is_relink();
             break;
         }
         let action: Action = req.into();
@@ -158,18 +172,21 @@ async fn send(s: Sender<Update>, r: Receiver<Request>) -> anyhow::Result<()> {
     if let Err(e) = timeout(Duration::from_secs(3), recv_task).await {
         log::error!("recv task exist with error: {}", e);
     }
-    Ok(())
+    Ok(relink)
 }
 
-pub(crate) fn handle(s: Sender<Update>, r: Receiver<Request>) -> anyhow::Result<()> {
+pub(crate) fn handle(s: Sender<Update>, r: Receiver<Request>, config: Arc<Mutex<Config>>) -> anyhow::Result<()> {
     let async_rt = Runtime::new().expect("runtime start up failed");
     loop {
-        if let Err(e) = async_rt.block_on(send(s.clone(), r.clone())) {
-            log::error!("link failed: {}", e);
-            let error = Update::Err(Error::NetworkError);
-            s.send(error).unwrap();
-        } else {
-            return Ok(());
+        let endpoint = config.lock().unwrap().endpoint.clone();
+        match async_rt.block_on(send(s.clone(), r.clone(), &endpoint)) {
+            Err(e) => {
+                log::error!("link failed: {}", e);
+                let error = Update::Err(Error::NetworkError);
+                s.send(error).unwrap();
+            }
+            Ok(false) => return Ok(()),
+            Ok(true) => continue,
         }
         // until a relink request
         loop {
@@ -177,7 +194,7 @@ pub(crate) fn handle(s: Sender<Update>, r: Receiver<Request>) -> anyhow::Result<
             if req.is_shutdown() {
                 return Ok(());
             }
-            if matches!(req, Request::Relink) {
+            if req.is_relink() {
                 break;
             }
         }

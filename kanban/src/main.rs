@@ -1,5 +1,10 @@
-use std::{fs::OpenOptions, thread};
+use std::{
+    fs::OpenOptions,
+    sync::{Arc, Mutex},
+    thread,
+};
 
+use config::Config;
 use message::Request;
 
 mod config;
@@ -20,6 +25,8 @@ fn main() {
     let log_config = simplelog::ConfigBuilder::new().set_time_format_str("%+").build();
     simplelog::WriteLogger::init(log_level, log_config, log_file).expect("log set failed");
 
+    let config = Config::from_file().unwrap_or_default();
+    let config = Arc::new(Mutex::new(config));
     let (s_main, r_back) = crossbeam_channel::unbounded();
     let (s_back, r_main) = crossbeam_channel::unbounded();
     let s_event = s_back.clone();
@@ -28,14 +35,13 @@ fn main() {
             log::error!("backend event failed: {}", e);
         }
     });
+    let msg_config = config.clone();
     let message_th = thread::spawn(move || {
-        if let Err(e) = message::handle(s_back, r_back) {
+        if let Err(e) = message::handle(s_back, r_back, msg_config) {
             log::error!("backend message failed: {}", e);
         }
     });
-    let req = Request::ListRoot;
-    req.send(&s_main).expect("inital list failed.");
-    if let Err(e) = ui::run(s_main, r_main) {
+    if let Err(e) = ui::run(s_main, r_main, config) {
         log::error!("tui failed: {}", e);
     }
     event_th.join().ok();

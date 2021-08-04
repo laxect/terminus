@@ -16,6 +16,11 @@ impl Store {
         Ok(Self { inner: config.open()? })
     }
 
+    pub(crate) fn clear(&self) {
+        self.inner.clear().ok();
+        self.inner.open_tree(ROOT_LIST).unwrap().clear().ok();
+    }
+
     /// can post/update
     pub(crate) fn insert(&self, node: Node) -> Result<()> {
         let value = bincode::serialize(&node)?;

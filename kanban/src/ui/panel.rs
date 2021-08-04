@@ -4,7 +4,7 @@ use tui::{
     backend::Backend,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
-    text::{Span, Spans},
+    text::{Span, Spans, Text},
     widgets::{Block, Borders, Paragraph, Wrap},
     Frame,
 };
@@ -81,6 +81,7 @@ pub(super) enum PanelMode {
 pub(super) struct Panel {
     edit: bool,
     info: String,
+    scroll: u16,
     cursor: usize,
     mode: PanelMode,
     inputs: Vec<Input>,
@@ -88,11 +89,12 @@ pub(super) struct Panel {
 
 impl Panel {
     pub(super) fn new<T: AsRef<str>>(inputs: Vec<Input>, info: T, mode: PanelMode) -> Self {
-        assert!(!inputs.is_empty());
+        assert!(!inputs.is_empty() || !matches!(mode, PanelMode::Panel));
         Self {
             mode,
             inputs,
             cursor: 0,
+            scroll: 0,
             edit: false,
             info: info.as_ref().to_owned(),
         }
@@ -103,24 +105,41 @@ impl Panel {
             Update::Edit(flag) => {
                 self.edit = flag;
             }
-            Update::Move(Move::Next) => {
-                let last = self.inputs.len() - 1;
-                if self.cursor < last {
-                    self.cursor += 1;
-                } else {
-                    self.cursor = 0;
+            Update::Move(Move::Next) => match self.mode {
+                PanelMode::Panel => {
+                    let last = self.inputs.len() - 1;
+                    if self.cursor < last {
+                        self.cursor += 1;
+                    } else {
+                        self.cursor = 0;
+                    }
                 }
-            }
-            Update::Move(Move::Prev) => {
-                if self.cursor > 0 {
-                    self.cursor -= 1;
-                } else {
-                    self.cursor = self.inputs.len() - 1;
+                PanelMode::Info => {
+                    let text = Text::from(self.info.as_str());
+                    let h = text.height() as u16;
+                    if self.scroll < h.saturating_sub(5) {
+                        self.scroll += 1;
+                    }
                 }
-            }
+                PanelMode::Diag => {}
+            },
+            Update::Move(Move::Prev) => match self.mode {
+                PanelMode::Panel => {
+                    if self.cursor > 0 {
+                        self.cursor -= 1;
+                    } else {
+                        self.cursor = self.inputs.len() - 1;
+                    }
+                }
+                PanelMode::Info => {
+                    self.scroll = self.scroll.saturating_sub(1);
+                }
+                PanelMode::Diag => {}
+            },
             Update::Input('\n') => {
-                if !self.inputs[self.cursor].input.is_empty() {
-                    self.inputs[self.cursor].input.push('\n');
+                let input = &mut self.inputs[self.cursor];
+                if !input.input.is_empty() && input.multi_line {
+                    input.input.push('\n');
                 }
             }
             Update::Input(ch) => {
@@ -139,9 +158,9 @@ impl Panel {
             .direction(Direction::Horizontal)
             .constraints(
                 [
-                    Constraint::Percentage(25),
-                    Constraint::Percentage(50),
-                    Constraint::Percentage(25),
+                    Constraint::Percentage(20),
+                    Constraint::Percentage(60),
+                    Constraint::Percentage(20),
                 ]
                 .as_ref(),
             )
@@ -189,10 +208,37 @@ impl Panel {
         f.render_widget(text, info);
     }
 
+    fn draw_info<B: Backend>(&self, f: &mut Frame<B>) {
+        let terminal = f.size();
+        let horizontal = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints(
+                [
+                    Constraint::Percentage(15),
+                    Constraint::Percentage(70),
+                    Constraint::Percentage(15),
+                ]
+                .as_ref(),
+            )
+            .split(terminal);
+        let area = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints(vec![
+                Constraint::Percentage(10),
+                Constraint::Percentage(80),
+                Constraint::Percentage(10),
+            ])
+            .split(horizontal[1]);
+        let block = Block::default().borders(Borders::all()).title("info");
+        let text = Paragraph::new(self.info.as_str()).block(block).scroll((self.scroll, 0));
+        f.render_widget(text, area[1]);
+    }
+
     pub(super) fn draw<B: Backend>(&self, f: &mut Frame<B>) {
         match self.mode {
             PanelMode::Panel => self.draw_panel(f),
-            _ => todo!(),
+            PanelMode::Info => self.draw_info(f),
+            _ => unimplemented!(),
         }
     }
 

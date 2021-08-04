@@ -8,13 +8,23 @@ pub(crate) struct Config {
     pub password: String,
 }
 
-impl Config {
-    pub(crate) fn from_file() -> Self {
+impl Default for Config {
+    fn default() -> Self {
         Config {
             endpoint: "[::1]:1120".to_owned(),
             username: "名無し".to_owned(),
             password: "CzwnmURw8".to_owned(),
         }
+    }
+}
+
+impl Config {
+    pub(crate) fn from_file() -> anyhow::Result<Self> {
+        Ok(Config {
+            endpoint: "[::1]:1120".to_owned(),
+            username: "名無し".to_owned(),
+            password: "CzwnmURw8".to_owned(),
+        })
     }
 
     pub(crate) fn save_to_file(&self) {}

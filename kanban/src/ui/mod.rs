@@ -8,7 +8,11 @@ use chrono::Local;
 use crossbeam_channel::{Receiver, Sender};
 use panel::Panel;
 use split::UnicodeSplit;
-use std::{io::stdout, mem::swap};
+use std::{
+    io::stdout,
+    mem::swap,
+    sync::{Arc, Mutex},
+};
 use terminus_types::{Node, NodeId};
 use termion::{raw::IntoRawMode, screen::AlternateScreen};
 use tui::{
@@ -22,15 +26,17 @@ use tui::{
 use unicode_width::UnicodeWidthStr;
 
 mod edit_panel;
+mod help;
 pub(crate) mod panel;
 mod split;
 
 #[derive(Debug)]
 enum State {
+    Help,
     Root,
-    Node(NodeId),
-    Setting,
     Post,
+    Setting,
+    Node(NodeId),
     Reply(Vec<u8>),
 }
 
@@ -40,7 +46,6 @@ struct App<'a> {
     state: Vec<State>,
     store: Store,
     panel: Option<Panel>,
-    config: Config,
     list_state: ListState,
     cur_stack: Vec<ListState>,
 }
@@ -60,7 +65,6 @@ impl App<'_> {
             state: vec![State::Root],
             store: Store::new()?,
             panel: None,
-            config: Config::from_file(),
             cur_stack: Vec::new(),
             list_state: ListState::default(),
         })
@@ -269,6 +273,19 @@ impl App<'_> {
         }
     }
 
+    fn top(&mut self) {
+        self.list_state
+            .select(if self.list.is_empty() { None } else { Some(0) });
+    }
+
+    fn bottom(&mut self) {
+        self.list_state.select(if self.list.is_empty() {
+            None
+        } else {
+            Some(self.list.len() - 1)
+        });
+    }
+
     fn go_down(&mut self, s: &Sender<Request>) {
         let node_id = if let Some(node) = self.selected() {
             node.id.to_owned()
@@ -324,13 +341,15 @@ impl App<'_> {
 }
 
 const ROOT_ID: &Vec<u8> = &vec![];
-pub(crate) fn run(s: Sender<Request>, r: Receiver<Update>) -> anyhow::Result<()> {
+pub(crate) fn run(s: Sender<Request>, r: Receiver<Update>, config: Arc<Mutex<Config>>) -> anyhow::Result<()> {
     let stdout = stdout().into_raw_mode()?;
     let stdout = AlternateScreen::from(stdout);
     let backend = TermionBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
     // set up app
     let mut app = App::default();
+    let req = Request::ListRoot;
+    req.send(&s).expect("inital list failed.");
     loop {
         terminal.draw(|f| app.draw(f))?;
         let event = r.recv()?;
@@ -340,8 +359,14 @@ pub(crate) fn run(s: Sender<Request>, r: Receiver<Update>) -> anyhow::Result<()>
                     let inputs = panel.inputs();
                     match app.state.pop().unwrap() {
                         State::Setting => {
-                            app.config.set_val_from_inputs(inputs);
-                            app.config.save_to_file();
+                            let mut config = config.lock().unwrap();
+                            config.set_val_from_inputs(inputs);
+                            config.save_to_file();
+                            s.send(Request::Relink)?;
+                            let req = Request::ListRoot;
+                            req.send(&s)?;
+                            app.store.clear();
+                            app.refesh_list()?;
                         }
                         State::Post => {
                             // equal to app.state() but can not do that because of ref rule
@@ -350,12 +375,15 @@ pub(crate) fn run(s: Sender<Request>, r: Receiver<Update>) -> anyhow::Result<()>
                             } else {
                                 ROOT_ID
                             };
-                            edit_panel::post_node_update(&s, node_id, inputs, &app.config).unwrap();
+                            edit_panel::post_node_update(&s, node_id, inputs, config.lock().unwrap().gen_author())
+                                .unwrap();
                         }
                         State::Reply(ref node_id) => {
-                            edit_panel::post_node_update(&s, node_id, inputs, &app.config).unwrap();
+                            edit_panel::post_node_update(&s, node_id, inputs, config.lock().unwrap().gen_author())
+                                .unwrap();
                         }
-                        _ => {}
+                        State::Help => {}
+                        _ => unreachable!(),
                     }
                     app.panel = None;
                 }
@@ -406,8 +434,14 @@ pub(crate) fn run(s: Sender<Request>, r: Receiver<Update>) -> anyhow::Result<()>
                 app.go_above(&s);
                 app.refesh_list()?;
             }
+            Update::Move(Move::Top) => {
+                app.top();
+            }
+            Update::Move(Move::Bottom) => {
+                app.bottom();
+            }
             Update::OpenPanel(OpenPanel::Setting) => {
-                let inputs = app.config.gen_inputs();
+                let inputs = config.lock().unwrap().gen_inputs();
                 let panel = Panel::new(
                     inputs,
                     "press i for input, ESC for quit, Return for confirm.",
@@ -428,6 +462,10 @@ pub(crate) fn run(s: Sender<Request>, r: Receiver<Update>) -> anyhow::Result<()>
                 };
                 app.panel = Some(edit_panel::edit_panel(Some("reply to node")));
                 app.state.push(State::Reply(node_id));
+            }
+            Update::OpenPanel(OpenPanel::Help) => {
+                app.panel = Some(help::help_panel());
+                app.state.push(State::Help);
             }
             _ => unreachable!(),
         }

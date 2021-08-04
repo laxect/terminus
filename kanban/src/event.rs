@@ -110,6 +110,10 @@ pub(crate) fn handle(s: Sender<Update>) -> anyhow::Result<()> {
                 s.send(Update::OpenPanel(OpenPanel::EditPanel(EditPanel::Reply)))?;
                 set_mode(Mode::Panel);
             }
+            Event::Key(Key::Char('?')) => {
+                s.send(Update::OpenPanel(OpenPanel::Help))?;
+                set_mode(Mode::Panel);
+            }
             _ => {
                 log::trace!("{:?} received.", c);
             }
