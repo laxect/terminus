@@ -27,8 +27,10 @@ impl Input {
     }
 
     fn draw<B: Backend>(&self, f: &mut Frame<B>, area: Rect, selected: bool, edit: bool) {
-        let mut style = Style::default();
-        style.fg = if selected { Some(Color::LightYellow) } else { None };
+        let style = Style {
+            fg: if selected { Some(Color::LightYellow) } else { None },
+            ..Default::default()
+        };
         let block = Block::default()
             .border_style(style)
             .borders(Borders::all())
@@ -38,7 +40,7 @@ impl Input {
             let split = self.input.split('\n').map(|str| str.unicode_split(width)).flatten();
             let count = std::cmp::max(split.clone().count(), 3);
             let mut take: Vec<&str> = split.skip(count - 3).collect();
-            if take.last().map(|str| str.width_cjk()) == Some(width) || self.input.chars().last() == Some('\n') {
+            if take.last().map(|str| str.width_cjk()) == Some(width) || self.input.ends_with('\n') {
                 take.push("");
                 if take.len() > 3 {
                     take.remove(0);
@@ -49,7 +51,7 @@ impl Input {
                 let x = area.x + 1 + take.last().map(|str| str.width_cjk() as u16).unwrap_or(0);
                 f.set_cursor(x, y)
             }
-            let spans: Vec<Spans> = take.into_iter().map(|str| Spans::from(str)).collect();
+            let spans: Vec<Spans> = take.into_iter().map(Spans::from).collect();
             let text = Paragraph::new(spans).block(block);
             f.render_widget(text, area);
         } else {

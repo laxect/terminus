@@ -1,6 +1,6 @@
 use anyhow::Result;
 use sled::{Config, Db};
-use terminus_types::{Node, NodeId};
+use terminus_types::Node;
 
 pub(crate) struct Store {
     inner: Db,
@@ -44,7 +44,7 @@ impl Store {
         Ok(res)
     }
 
-    pub(crate) fn list(&self, root: &NodeId) -> Result<Vec<Node>> {
+    pub(crate) fn list(&self, root: &[u8]) -> Result<Vec<Node>> {
         let mut res = Vec::new();
         let list = self.inner.scan_prefix(root).values();
         for item in list {

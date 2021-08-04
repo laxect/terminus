@@ -84,7 +84,7 @@ impl App<'_> {
             Span::styled(first, Style::default().add_modifier(Modifier::BOLD).fg(color)),
         ]);
         let mut lines = vec![first];
-        while let Some(line) = title.next() {
+        for line in title {
             let line = Spans::from(vec![
                 Span::from(&BLANK[0..space]),
                 Span::styled("  ", Style::default().add_modifier(Modifier::BOLD).fg(color)),
@@ -318,7 +318,7 @@ impl App<'_> {
         if let Some(now) = self.list_state.selected() {
             Some(&self.list[now])
         } else {
-            return None;
+            None
         }
     }
 }
@@ -407,7 +407,7 @@ pub(crate) fn run(s: Sender<Request>, r: Receiver<Update>) -> anyhow::Result<()>
                 app.refesh_list()?;
             }
             Update::OpenPanel(OpenPanel::Setting) => {
-                let inputs = app.config.into_inputs();
+                let inputs = app.config.gen_inputs();
                 let panel = Panel::new(
                     inputs,
                     "press i for input, ESC for quit, Return for confirm.",

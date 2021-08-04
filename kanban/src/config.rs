@@ -19,7 +19,7 @@ impl Config {
 
     pub(crate) fn save_to_file(&self) {}
 
-    pub(crate) fn into_inputs(&self) -> Vec<Input> {
+    pub(crate) fn gen_inputs(&self) -> Vec<Input> {
         vec![
             Input::new("endpoint", &self.endpoint, false),
             Input::new("username", &self.username, false),

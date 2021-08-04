@@ -92,6 +92,12 @@ pub(crate) fn handle(s: Sender<Update>) -> anyhow::Result<()> {
             Event::Key(Key::Char('l') | Key::Right) => {
                 s.send(Update::Move(Move::Child))?;
             }
+            Event::Key(Key::Char('g')) => {
+                s.send(Update::Move(Move::Top))?;
+            }
+            Event::Key(Key::Char('G')) => {
+                s.send(Update::Move(Move::Bottom))?;
+            }
             Event::Key(Key::Char('s')) => {
                 s.send(Update::OpenPanel(OpenPanel::Setting))?;
                 set_mode(Mode::Panel);

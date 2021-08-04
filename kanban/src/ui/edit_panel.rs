@@ -14,12 +14,11 @@ pub(super) fn edit_panel(info: Option<&str>) -> Panel {
         // もっと、もっと、もっと、ちゃんと言って
         Input::new("content", "", true),
     ];
-    let panel = Panel::new(
+    Panel::new(
         inputs,
         info.unwrap_or("press i to input, ESC to quit, Return to confirm."),
         PanelMode::Panel,
-    );
-    panel
+    )
 }
 
 /// node_id: parent id
