@@ -361,7 +361,7 @@ pub(crate) fn run(s: Sender<Request>, r: Receiver<Update>, config: Arc<Mutex<Con
                         State::Setting => {
                             let mut config = config.lock().unwrap();
                             config.set_val_from_inputs(inputs);
-                            config.save_to_file();
+                            config.save_to_file().ok();
                             s.send(Request::Relink)?;
                             let req = Request::ListRoot;
                             req.send(&s)?;

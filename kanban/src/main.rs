@@ -5,7 +5,6 @@ use std::{
 };
 
 use config::Config;
-use message::Request;
 
 mod config;
 mod event;
@@ -41,9 +40,10 @@ fn main() {
             log::error!("backend message failed: {}", e);
         }
     });
-    if let Err(e) = ui::run(s_main, r_main, config) {
+    if let Err(e) = ui::run(s_main, r_main, config.clone()) {
         log::error!("tui failed: {}", e);
     }
+    config.lock().unwrap().save_to_file().ok();
     event_th.join().ok();
     message_th.join().ok();
 }
