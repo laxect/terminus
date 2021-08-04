@@ -66,7 +66,6 @@ mod tests {
     fn split_space() {
         let input = "";
         let mut split = input.unicode_split(4);
-        assert_eq!(Some(""), split.next());
         assert_eq!(None, split.next());
     }
 
