@@ -6,8 +6,7 @@ pub(crate) struct Store {
     inner: Db,
 }
 
-const ROOT_START: &[u8] = &[0; 16];
-const ROOT_END: &[u8] = &[255; 16];
+const ROOT_LIST: &str = "root_list";
 impl Store {
     pub(crate) fn new() -> Result<Self> {
         let config = Config::new()
@@ -19,7 +18,11 @@ impl Store {
 
     /// can post/update
     pub(crate) fn insert(&self, node: Node) -> Result<()> {
-        self.inner.insert(&node.id, bincode::serialize(&node)?)?;
+        let value = bincode::serialize(&node)?;
+        self.inner.insert(&node.id, value.clone())?;
+        if node.is_top_level() {
+            self.inner.open_tree(ROOT_LIST)?.insert(&node.id, value)?;
+        }
         Ok(())
     }
 
@@ -30,9 +33,10 @@ impl Store {
 
     pub(crate) fn list_root(&self) -> Result<Vec<Node>> {
         let mut res = Vec::new();
-        let list = self.inner.range(ROOT_START..ROOT_END).values();
+        let list = self.inner.open_tree(ROOT_LIST)?.iter();
         for item in list {
-            let item = bincode::deserialize(&item?)?;
+            let (_key, val) = item?;
+            let item = bincode::deserialize(&val)?;
             res.push(item);
         }
         res.sort_unstable_by_key(|node: &Node| node.last_reply);

@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use sled::{Batch, Db, IVec};
 use terminus_types::{action::Response, Author, Error, Node, NodeId};
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Clone)]
 struct NodeBody {
     pub title: String,
     pub author: Author,
@@ -80,6 +80,7 @@ fn assemble_node(id: &[u8], body: &[u8]) -> anyhow::Result<Node> {
 }
 
 const CONTENT_TREE: &str = "content";
+const ROOT_LIST: &str = "root_list";
 static DB: Lazy<Db> = Lazy::new(|| sled::open("database").unwrap());
 
 pub(crate) fn post(node: Node) -> anyhow::Result<Response> {
@@ -112,18 +113,18 @@ pub(crate) fn post(node: Node) -> anyhow::Result<Response> {
         };
         top.last_reply = body.publish_time;
         batch.insert(top_id_bin, top);
+    } else {
+        let root_list = DB.open_tree(ROOT_LIST)?;
+        root_list.insert(id.clone(), body.clone())?;
     }
     batch.insert(id, body);
     tree.apply_batch(batch)?;
     Ok(Response::Post(resp_node))
 }
 
-const ROOT_START: &[u8] = &[0; 16];
-const ROOT_END: &[u8] = &[255; 16];
-
 pub(crate) fn list_root() -> anyhow::Result<Response> {
-    let tree = DB.open_tree(CONTENT_TREE)?;
-    let list = tree.range(ROOT_START..ROOT_END);
+    let tree = DB.open_tree(ROOT_LIST)?;
+    let list = tree.iter();
     let mut res = Vec::new();
     for item in list {
         let (id, body) = item?;

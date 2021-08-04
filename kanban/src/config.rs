@@ -1,3 +1,5 @@
+use terminus_types::{Author, Pass};
+
 use crate::ui::panel::Input;
 
 pub(crate) struct Config {
@@ -15,7 +17,7 @@ impl Config {
         }
     }
 
-    pub(crate) fn save_to_file() {}
+    pub(crate) fn save_to_file(&self) {}
 
     pub(crate) fn into_inputs(&self) -> Vec<Input> {
         vec![
@@ -39,6 +41,13 @@ impl Config {
                 }
                 _ => unreachable!(),
             }
+        }
+    }
+
+    pub(crate) fn gen_author(&self) -> Author {
+        Author {
+            name: self.username.clone(),
+            pass: Pass::Pass(self.password.clone()),
         }
     }
 }

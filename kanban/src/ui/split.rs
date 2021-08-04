@@ -63,6 +63,14 @@ mod tests {
     use super::UnicodeSplit;
 
     #[test]
+    fn split_space() {
+        let input = "";
+        let mut split = input.unicode_split(4);
+        assert_eq!(Some(""), split.next());
+        assert_eq!(None, split.next());
+    }
+
+    #[test]
     fn split_non_cjk() {
         let input = "like a rolling stone";
         let mut split = input.unicode_split(4);

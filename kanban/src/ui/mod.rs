@@ -1,6 +1,6 @@
 use crate::{
     config::Config,
-    message::{Move, OpenPanel, PanelAction, Request, Update},
+    message::{EditPanel, Move, OpenPanel, PanelAction, Request, Update},
     store::Store,
     ui::panel::PanelMode,
 };
@@ -23,7 +23,6 @@ use unicode_width::UnicodeWidthStr;
 
 mod edit_panel;
 pub(crate) mod panel;
-mod setting;
 mod split;
 
 #[derive(Debug)]
@@ -32,13 +31,13 @@ enum State {
     Node(NodeId),
     Setting,
     Post,
-    Reply(NodeId),
+    Reply(Vec<u8>),
 }
 
 struct App<'a> {
     list: Vec<Node>,
     info: Spans<'a>,
-    state: State,
+    state: Vec<State>,
     store: Store,
     panel: Option<Panel>,
     config: Config,
@@ -58,7 +57,7 @@ impl App<'_> {
         Ok(Self {
             list: Vec::new(),
             info: Self::default_info(),
-            state: State::Root,
+            state: vec![State::Root],
             store: Store::new()?,
             panel: None,
             config: Config::from_file(),
@@ -67,10 +66,14 @@ impl App<'_> {
         })
     }
 
-    fn draw_title<'a>(title: String, width: usize, mut space: usize) -> Text<'a> {
+    fn draw_title<'a>(&self, title: String, width: usize, mut space: usize) -> Text<'a> {
         space = std::cmp::min(space, BLANK.len());
         let color = space as u8;
-        let color = Color::Rgb(color, color, color);
+        let color = if let State::Root = self.state() {
+            Color::Rgb(50, 50, 255 - color)
+        } else {
+            Color::Rgb(color, color, color)
+        };
         // start from '# '.
         let width = width - 2 - space;
         let mut title = title.unicode_split(width);
@@ -99,7 +102,7 @@ impl App<'_> {
         space = std::cmp::min(space, BLANK.len());
         let width = width - space;
         let blank = ["\n", &BLANK[..space]].concat();
-        let split = content.unicode_split(width);
+        let split = content.split('\n').map(|str| str.unicode_split(width)).flatten();
         let mut content = if let Some(max_height) = max_height {
             let mut content = split
                 .take(max_height)
@@ -125,7 +128,7 @@ impl App<'_> {
         let level = node.id.len() / 16;
         let spaces = level.saturating_sub(1) * 2;
         // title
-        let mut text = Self::draw_title(node.title, width, spaces);
+        let mut text = self.draw_title(node.title, width, spaces);
         // author part
         let edited = if node.edited {
             Color::LightCyan
@@ -151,7 +154,11 @@ impl App<'_> {
             author_line.insert(0, Span::from(&BLANK[0..blank_len]));
         }
         // content part
-        let max_content_height = if let State::Root = self.state { Some(3) } else { None };
+        let max_content_height = if let State::Root = self.state.last().unwrap() {
+            Some(3)
+        } else {
+            None
+        };
         text.extend(Self::draw_content(node.content, width, spaces, max_content_height));
         text.extend(Text::from(Spans::from(author_line)));
         ListItem::new(text).style(Style::default())
@@ -216,7 +223,7 @@ impl App<'_> {
     }
 
     fn refesh_list(&mut self) -> anyhow::Result<()> {
-        match &self.state {
+        match self.state() {
             State::Root => {
                 self.list = self.store.list_root()?;
             }
@@ -263,23 +270,28 @@ impl App<'_> {
     }
 
     fn go_down(&mut self, s: &Sender<Request>) {
-        let now = if let Some(now) = self.list_state.selected() {
-            now
+        let node_id = if let Some(node) = self.selected() {
+            node.id.to_owned()
         } else {
             return;
         };
+        // don't go on same node
+        if let State::Node(now) = self.state() {
+            if now == &node_id {
+                return;
+            }
+        }
         let mut new_list_state = ListState::default();
         new_list_state.select(Some(0));
         swap(&mut self.list_state, &mut new_list_state);
         self.cur_stack.push(new_list_state);
-        let node_id = self.list[now].id.to_owned();
-        self.state = State::Node(node_id.clone());
+        self.state.push(State::Node(node_id.clone()));
         let req = Request::List(node_id);
         req.send(s).unwrap();
     }
 
     fn go_above(&mut self, s: &Sender<Request>) {
-        let node_id = if let State::Node(ref id) = self.state {
+        let node_id = if let State::Node(ref id) = self.state() {
             id.to_owned()
         } else {
             return;
@@ -288,17 +300,30 @@ impl App<'_> {
         let length = node_id.len();
         let prev_cur = self.cur_stack.pop().unwrap_or_default();
         self.list_state = prev_cur;
+        self.state.pop();
         let req = if length <= 16 {
-            self.state = State::Root;
             Request::ListRoot
         } else {
-            self.state = State::Node(node_id[..length - 16].to_owned());
             Request::List(node_id)
         };
         req.send(s).unwrap();
     }
+
+    /// Get a reference to the app's state.
+    fn state(&self) -> &State {
+        self.state.last().unwrap()
+    }
+
+    pub(crate) fn selected(&self) -> Option<&Node> {
+        if let Some(now) = self.list_state.selected() {
+            Some(&self.list[now])
+        } else {
+            return None;
+        }
+    }
 }
 
+const ROOT_ID: &Vec<u8> = &vec![];
 pub(crate) fn run(s: Sender<Request>, r: Receiver<Update>) -> anyhow::Result<()> {
     let stdout = stdout().into_raw_mode()?;
     let stdout = AlternateScreen::from(stdout);
@@ -309,17 +334,33 @@ pub(crate) fn run(s: Sender<Request>, r: Receiver<Update>) -> anyhow::Result<()>
     loop {
         terminal.draw(|f| app.draw(f))?;
         let event = r.recv()?;
-        if let Some(ref mut panel) = app.panel {
+        if let Some(panel) = app.panel.as_mut() {
             match event {
                 Update::PanelAction(PanelAction::Confirm) => {
                     let inputs = panel.inputs();
-                    match app.state {
-                        State::Setting => app.config.set_val_from_inputs(inputs),
+                    match app.state.pop().unwrap() {
+                        State::Setting => {
+                            app.config.set_val_from_inputs(inputs);
+                            app.config.save_to_file();
+                        }
+                        State::Post => {
+                            // equal to app.state() but can not do that because of ref rule
+                            let node_id = if let State::Node(node_id) = app.state.last().unwrap() {
+                                node_id
+                            } else {
+                                ROOT_ID
+                            };
+                            edit_panel::post_node_update(&s, node_id, inputs, &app.config).unwrap();
+                        }
+                        State::Reply(ref node_id) => {
+                            edit_panel::post_node_update(&s, node_id, inputs, &app.config).unwrap();
+                        }
                         _ => {}
                     }
                     app.panel = None;
                 }
                 Update::PanelAction(PanelAction::Cancel) => {
+                    app.state.pop();
                     app.panel = None;
                 }
                 _ => {
@@ -373,7 +414,20 @@ pub(crate) fn run(s: Sender<Request>, r: Receiver<Update>) -> anyhow::Result<()>
                     PanelMode::Panel,
                 );
                 app.panel = Some(panel);
-                app.state = State::Setting;
+                app.state.push(State::Setting);
+            }
+            Update::OpenPanel(OpenPanel::EditPanel(EditPanel::Post)) => {
+                app.panel = Some(edit_panel::edit_panel(None));
+                app.state.push(State::Post);
+            }
+            Update::OpenPanel(OpenPanel::EditPanel(EditPanel::Reply)) => {
+                let node_id = if let Some(node) = app.selected() {
+                    node.id.to_owned()
+                } else {
+                    continue;
+                };
+                app.panel = Some(edit_panel::edit_panel(Some("reply to node")));
+                app.state.push(State::Reply(node_id));
             }
             _ => unreachable!(),
         }

@@ -10,6 +10,7 @@ use tui::{
 };
 use unicode_width::UnicodeWidthStr;
 
+#[derive(Debug, Clone)]
 pub(crate) struct Input {
     pub label: String,
     pub input: String, // buffer
@@ -34,22 +35,22 @@ impl Input {
             .title(Span::raw(&self.label));
         let width = block.inner(area).width as usize;
         if self.multi_line {
-            let split = self.input.unicode_split(width);
+            let split = self.input.split('\n').map(|str| str.unicode_split(width)).flatten();
             let count = std::cmp::max(split.clone().count(), 3);
             let mut take: Vec<&str> = split.skip(count - 3).collect();
-            if take.last().map(|str| str.width_cjk()) == Some(width) {
+            if take.last().map(|str| str.width_cjk()) == Some(width) || self.input.chars().last() == Some('\n') {
                 take.push("");
                 if take.len() > 3 {
                     take.remove(0);
                 }
             }
             if edit {
-                let y = area.y + 1 + take.len() as u16;
-                let x = area.x + 1 + take.last().map(|str| str.width_cjk() as u16 + 1).unwrap();
+                let y = area.y + std::cmp::max(take.len() as u16, 1);
+                let x = area.x + 1 + take.last().map(|str| str.width_cjk() as u16).unwrap_or(0);
                 f.set_cursor(x, y)
             }
-            let spans: Vec<Span> = take.into_iter().map(|str| Span::raw(str)).collect();
-            let text = Paragraph::new(Spans::from(spans)).block(block);
+            let spans: Vec<Spans> = take.into_iter().map(|str| Spans::from(str)).collect();
+            let text = Paragraph::new(spans).block(block);
             f.render_widget(text, area);
         } else {
             let mut width = width - 1;
@@ -115,6 +116,11 @@ impl Panel {
                     self.cursor = self.inputs.len() - 1;
                 }
             }
+            Update::Input('\n') => {
+                if !self.inputs[self.cursor].input.is_empty() {
+                    self.inputs[self.cursor].input.push('\n');
+                }
+            }
             Update::Input(ch) => {
                 self.inputs[self.cursor].input.push(ch);
             }
@@ -160,7 +166,6 @@ impl Panel {
             .constraints(chunks)
             .split(horizontal[1]);
         // remove space
-        log::info!("{:?}", &blocks);
         blocks.remove(0);
         blocks.remove(blocks.len() - 1);
         blocks
