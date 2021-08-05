@@ -114,6 +114,7 @@ pub(crate) fn post(mut node: Node) -> anyhow::Result<Response> {
             return Ok(Response::Err(Error::IdInvalid));
         };
         top.last_reply = body.publish_time;
+        DB.open_tree(ROOT_LIST)?.insert(&top_id_bin, top.clone())?;
         batch.insert(top_id_bin, top);
     } else {
         let root_list = DB.open_tree(ROOT_LIST)?;
