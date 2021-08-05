@@ -414,12 +414,10 @@ pub(crate) fn run(s: Sender<Request>, r: Receiver<Update>, config: Arc<Mutex<Con
                     app.store.insert(node)?;
                 }
                 app.refesh_list()?;
-                app.set_info("update received".to_string());
             }
             Update::DeleteNode(node) => {
                 app.store.delete(&node).ok();
                 app.refesh_list()?;
-                app.set_info("delete received".to_string());
             }
             Update::Quit => {
                 // press 'q'
