@@ -203,8 +203,8 @@ impl App<'_> {
         f.render_widget(info, area);
     }
 
-    fn set_info(&mut self, msg: String) {
-        let info = Spans::from(vec![Span::from(msg)]);
+    fn set_info<T: AsRef<str>>(&mut self, msg: T) {
+        let info = Spans::from(vec![Span::from(msg.as_ref().to_string())]);
         self.info = info;
     }
 
@@ -354,6 +354,7 @@ pub(crate) fn run(s: Sender<Request>, r: Receiver<Update>, config: Arc<Mutex<Con
     let mut app = App::default();
     let req = Request::ListRoot;
     req.send(&s).expect("inital list failed.");
+    app.set_info("press ? for help!");
     loop {
         terminal.draw(|f| app.draw(f))?;
         let event = r.recv()?;

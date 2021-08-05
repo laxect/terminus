@@ -1,10 +1,11 @@
+use config::Config;
 use std::{
+    fs,
     fs::OpenOptions,
+    path::PathBuf,
     sync::{Arc, Mutex},
     thread,
 };
-
-use config::Config;
 
 mod config;
 mod event;
@@ -14,10 +15,14 @@ mod ui;
 
 fn main() {
     // log file
+    let log_dir_path = dirs::data_local_dir()
+        .unwrap_or_else(|| PathBuf::from("~/.local/share"))
+        .join(config::APPLICATION);
+    fs::create_dir_all(&log_dir_path).ok();
     let log_file = OpenOptions::new()
         .create(true)
         .append(true)
-        .open("./kanban.log")
+        .open(log_dir_path.join("client.log"))
         .expect("log file open failed");
     log_panics::init();
     let log_level = simplelog::LevelFilter::Info;

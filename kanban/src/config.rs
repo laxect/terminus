@@ -8,7 +8,7 @@ use std::{
 };
 use terminus_types::{Author, Pass};
 
-const APPLICATION: &str = "kanban";
+pub const APPLICATION: &str = "kanban";
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub(crate) struct Config {
