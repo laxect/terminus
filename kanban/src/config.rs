@@ -51,7 +51,7 @@ impl Config {
             .join(APPLICATION);
         create_dir_all(&path).ok();
         let path = path.join("config.toml");
-        let mut config_file = OpenOptions::new().create_new(true).write(true).open(path)?;
+        let mut config_file = OpenOptions::new().create(true).truncate(true).write(true).open(path)?;
         let config_str = toml::to_string_pretty(&self)?;
         config_file.write_all(config_str.as_bytes())?;
         Ok(())
