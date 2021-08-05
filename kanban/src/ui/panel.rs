@@ -8,6 +8,7 @@ use tui::{
     widgets::{Block, Borders, Paragraph, Wrap},
     Frame,
 };
+use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
 #[derive(Debug, Clone)]
@@ -59,7 +60,17 @@ impl Input {
             if self.input.len() < width {
                 width = self.input.len();
             }
-            let show = &self.input[self.input.len() - width..];
+            let mut len = 0;
+            let mut start = 0;
+            for (ind, char) in self.input.grapheme_indices(true).rev() {
+                if len + char.width_cjk() < width {
+                    len += char.width_cjk();
+                    start = ind;
+                } else {
+                break;
+                }
+            }
+            let show = &self.input[start..];
             let input = Span::styled(show, style);
             let text = Paragraph::new(input).block(block);
             f.render_widget(text, area);
