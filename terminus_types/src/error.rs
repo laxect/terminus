@@ -3,7 +3,7 @@ use thiserror::Error;
 
 #[derive(Error, Debug, Deserialize, Serialize)]
 pub enum Error {
-    #[error("need pass to be un masked")]
+    #[error("need pass to be unmasked")]
     NeedUnMaskPass,
     #[error("already a node here")]
     NodeExist,

@@ -33,11 +33,15 @@ mod split;
 #[derive(Debug)]
 enum State {
     Help,
+    // list mode
     Root,
-    Post,
-    Setting,
     Node(NodeId),
+    Setting,
+    // panel
+    Post,
     Reply(Vec<u8>),
+    Update(Node),
+    Delete(Node),
 }
 
 struct App<'a> {
@@ -375,12 +379,16 @@ pub(crate) fn run(s: Sender<Request>, r: Receiver<Update>, config: Arc<Mutex<Con
                             } else {
                                 ROOT_ID
                             };
-                            edit_panel::post_node_update(&s, node_id, inputs, config.lock().unwrap().gen_author())
-                                .unwrap();
+                            edit_panel::post_node(&s, node_id, inputs, config.lock().unwrap().gen_author()).unwrap();
                         }
                         State::Reply(ref node_id) => {
-                            edit_panel::post_node_update(&s, node_id, inputs, config.lock().unwrap().gen_author())
-                                .unwrap();
+                            edit_panel::post_node(&s, node_id, inputs, config.lock().unwrap().gen_author()).unwrap();
+                        }
+                        State::Update(node) => {
+                            edit_panel::update_node(&s, node, inputs, config.lock().unwrap().gen_author()).unwrap();
+                        }
+                        State::Delete(node) => {
+                            edit_panel::delete_node(&s, node, config.lock().unwrap().gen_author()).unwrap();
                         }
                         State::Help => {}
                         _ => unreachable!(),
@@ -409,7 +417,7 @@ pub(crate) fn run(s: Sender<Request>, r: Receiver<Update>, config: Arc<Mutex<Con
                 app.set_info("update received".to_string());
             }
             Update::DeleteNode(node) => {
-                app.store.delete(node).ok();
+                app.store.delete(&node).ok();
                 app.refesh_list()?;
                 app.set_info("delete received".to_string());
             }
@@ -451,8 +459,15 @@ pub(crate) fn run(s: Sender<Request>, r: Receiver<Update>, config: Arc<Mutex<Con
                 app.state.push(State::Setting);
             }
             Update::OpenPanel(OpenPanel::EditPanel(EditPanel::Post)) => {
-                app.panel = Some(edit_panel::edit_panel(None));
+                app.panel = Some(edit_panel::post_panel(None));
                 app.state.push(State::Post);
+            }
+            Update::OpenPanel(OpenPanel::EditPanel(EditPanel::Update)) => {
+                if let Some(node) = app.selected() {
+                    let node = node.clone();
+                    app.panel = Some(edit_panel::update_panel(None, &node));
+                    app.state.push(State::Update(node));
+                }
             }
             Update::OpenPanel(OpenPanel::EditPanel(EditPanel::Reply)) => {
                 let node_id = if let Some(node) = app.selected() {
@@ -460,12 +475,19 @@ pub(crate) fn run(s: Sender<Request>, r: Receiver<Update>, config: Arc<Mutex<Con
                 } else {
                     continue;
                 };
-                app.panel = Some(edit_panel::edit_panel(Some("reply to node")));
+                app.panel = Some(edit_panel::post_panel(Some("reply to node")));
                 app.state.push(State::Reply(node_id));
             }
             Update::OpenPanel(OpenPanel::Help) => {
                 app.panel = Some(help::help_panel());
                 app.state.push(State::Help);
+            }
+            Update::OpenPanel(OpenPanel::Delete) => {
+                if let Some(node) = app.selected() {
+                    let node = node.clone();
+                    app.panel = Some(edit_panel::delete_confirm(&node.title));
+                    app.state.push(State::Delete(node));
+                }
             }
             _ => unreachable!(),
         }

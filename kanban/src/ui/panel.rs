@@ -75,7 +75,6 @@ impl Input {
 pub(super) enum PanelMode {
     Panel,
     Info,
-    Diag,
 }
 
 pub(super) struct Panel {
@@ -121,7 +120,6 @@ impl Panel {
                         self.scroll += 1;
                     }
                 }
-                PanelMode::Diag => {}
             },
             Update::Move(Move::Prev) => match self.mode {
                 PanelMode::Panel => {
@@ -134,7 +132,6 @@ impl Panel {
                 PanelMode::Info => {
                     self.scroll = self.scroll.saturating_sub(1);
                 }
-                PanelMode::Diag => {}
             },
             Update::Input('\n') => {
                 let input = &mut self.inputs[self.cursor];
@@ -238,7 +235,6 @@ impl Panel {
         match self.mode {
             PanelMode::Panel => self.draw_panel(f),
             PanelMode::Info => self.draw_info(f),
-            _ => unimplemented!(),
         }
     }
 

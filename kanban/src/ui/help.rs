@@ -16,7 +16,7 @@ G      go to bottom
 n,p    new post
 r      reply to this post
 d      delete this post
-u      update this post
+U      update this post
 
 s      open setting
 

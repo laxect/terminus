@@ -31,8 +31,11 @@ impl Store {
         Ok(())
     }
 
-    pub(crate) fn delete(&self, node: Node) -> Result<()> {
-        self.inner.remove(node.id)?;
+    pub(crate) fn delete(&self, node: &Node) -> Result<()> {
+        if node.is_top_level() {
+            self.inner.open_tree(ROOT_LIST).unwrap().remove(&node.id)?;
+        }
+        self.inner.remove(&node.id)?;
         Ok(())
     }
 

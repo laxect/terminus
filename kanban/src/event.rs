@@ -1,7 +1,10 @@
 use crate::message::{EditPanel, Move, OpenPanel, PanelAction, Update};
 use crossbeam_channel::Sender;
 use crossbeam_utils::atomic::AtomicCell;
-use std::io::stdin;
+use std::{
+    io::stdin,
+    sync::atomic::{AtomicBool, Ordering},
+};
 use termion::{
     event::{Event, Key},
     input::TermRead,
@@ -17,15 +20,18 @@ pub(crate) enum Mode {
     Input = 2,
 }
 
-fn set_mode(on: Mode) {
+static INPUT_ENABLE: AtomicBool = AtomicBool::new(true);
+
+fn set_mode(on: Mode, input_enable: bool) {
     MODE.store(on);
+    INPUT_ENABLE.store(input_enable, Ordering::Release);
 }
 
 fn handle_input(s: &Sender<Update>, c: Event) -> anyhow::Result<()> {
     match c {
         Event::Key(Key::Esc) => {
             s.send(Update::Edit(false))?;
-            set_mode(Mode::Panel);
+            set_mode(Mode::Panel, true);
         }
         Event::Key(Key::Char(ch)) => {
             s.send(Update::Input(ch))?;
@@ -47,16 +53,18 @@ fn handle_panel(s: &Sender<Update>, c: Event) -> anyhow::Result<()> {
             s.send(Update::Move(Move::Prev))?;
         }
         Event::Key(Key::Char('i' | 'o')) => {
-            s.send(Update::Edit(true))?;
-            set_mode(Mode::Input);
+            if INPUT_ENABLE.load(Ordering::Acquire) {
+                s.send(Update::Edit(true))?;
+                set_mode(Mode::Input, true);
+            }
         }
-        Event::Key(Key::Char('q') | Key::Esc) => {
+        Event::Key(Key::Char('q' | 'n') | Key::Esc) => {
             s.send(Update::PanelAction(PanelAction::Cancel))?;
-            set_mode(Mode::Normal);
+            set_mode(Mode::Normal, true);
         }
-        Event::Key(Key::Char('\n')) => {
+        Event::Key(Key::Char('\n' | 'y')) => {
             s.send(Update::PanelAction(PanelAction::Confirm))?;
-            set_mode(Mode::Normal);
+            set_mode(Mode::Normal, true);
         }
         _ => {}
     }
@@ -89,7 +97,7 @@ pub(crate) fn handle(s: Sender<Update>) -> anyhow::Result<()> {
             Event::Key(Key::Char('h') | Key::Left) => {
                 s.send(Update::Move(Move::Parent))?;
             }
-            Event::Key(Key::Char('l') | Key::Right) => {
+            Event::Key(Key::Char('l') | Key::Right | Key::Char('\n')) => {
                 s.send(Update::Move(Move::Child))?;
             }
             Event::Key(Key::Char('g')) => {
@@ -100,19 +108,27 @@ pub(crate) fn handle(s: Sender<Update>) -> anyhow::Result<()> {
             }
             Event::Key(Key::Char('s')) => {
                 s.send(Update::OpenPanel(OpenPanel::Setting))?;
-                set_mode(Mode::Panel);
+                set_mode(Mode::Panel, true);
             }
             Event::Key(Key::Char('p' | 'n')) => {
                 s.send(Update::OpenPanel(OpenPanel::EditPanel(EditPanel::Post)))?;
-                set_mode(Mode::Panel);
+                set_mode(Mode::Panel, true);
             }
             Event::Key(Key::Char('r')) => {
                 s.send(Update::OpenPanel(OpenPanel::EditPanel(EditPanel::Reply)))?;
-                set_mode(Mode::Panel);
+                set_mode(Mode::Panel, true);
             }
             Event::Key(Key::Char('?')) => {
                 s.send(Update::OpenPanel(OpenPanel::Help))?;
-                set_mode(Mode::Panel);
+                set_mode(Mode::Panel, false);
+            }
+            Event::Key(Key::Char('d')) => {
+                s.send(Update::OpenPanel(OpenPanel::Delete))?;
+                set_mode(Mode::Panel, false);
+            }
+            Event::Key(Key::Char('U')) => {
+                s.send(Update::OpenPanel(OpenPanel::EditPanel(EditPanel::Update)))?;
+                set_mode(Mode::Panel, true);
             }
             _ => {
                 log::trace!("{:?} received.", c);

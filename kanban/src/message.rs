@@ -64,13 +64,15 @@ impl Request {
 pub(crate) enum EditPanel {
     Post,
     Reply,
+    Update,
 }
 
 #[derive(Debug)]
 pub(crate) enum OpenPanel {
-    EditPanel(EditPanel),
-    Setting,
     Help,
+    Delete,
+    Setting,
+    EditPanel(EditPanel),
 }
 
 #[derive(Debug)]
@@ -92,13 +94,17 @@ pub(crate) enum PanelAction {
 #[derive(Debug)]
 pub(crate) enum Update {
     Quit,
-    Edit(bool),
-    Move(Move),
     Err(Error),
+    // input mode
+    Edit(bool),
     Input(char),
     DeleteChar,
+    // navi
+    Move(Move),
+    // remote update
     Nodes(Vec<Node>),
     DeleteNode(Node),
+    // panel action
     OpenPanel(OpenPanel),
     PanelAction(PanelAction),
 }

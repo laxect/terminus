@@ -83,7 +83,8 @@ const CONTENT_TREE: &str = "content";
 const ROOT_LIST: &str = "root_list";
 static DB: Lazy<Db> = Lazy::new(|| sled::open("database").unwrap());
 
-pub(crate) fn post(node: Node) -> anyhow::Result<Response> {
+pub(crate) fn post(mut node: Node) -> anyhow::Result<Response> {
+    node.author.mask();
     let resp_node = node.clone();
     if node.id.len() % 16 != 0 {
         return Ok(Response::Err(Error::IdInvalid));
@@ -181,6 +182,9 @@ pub(crate) fn delete(node: Node) -> anyhow::Result<Response> {
         }
         let node = assemble_node(id, &bincode::serialize(&body)?)?;
         tree.remove(id)?;
+        if node.is_top_level() {
+            DB.open_tree(ROOT_LIST)?.remove(id)?;
+        }
         Ok(Response::Delete(node))
     })
 }
@@ -190,7 +194,10 @@ pub(crate) fn update(node: Node) -> anyhow::Result<Response> {
         body.edited = true;
         let node = assemble_node(id, &bincode::serialize(&body)?)?;
         // TODO may should use merge instead of replace
-        tree.insert(id, body)?;
+        tree.insert(id, body.clone())?;
+        if node.is_top_level() {
+            DB.open_tree(ROOT_LIST)?.insert(id, body)?;
+        }
         Ok(Response::Update(node))
     })
 }
