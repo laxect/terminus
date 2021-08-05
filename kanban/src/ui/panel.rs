@@ -57,13 +57,13 @@ impl Input {
             f.render_widget(text, area);
         } else {
             let mut width = width - 1;
-            if self.input.len() < width {
-                width = self.input.len();
+            if self.input.width_cjk() < width {
+                width = self.input.width_cjk();
             }
             let mut len = 0;
             let mut start = 0;
             for (ind, char) in self.input.grapheme_indices(true).rev() {
-                if len + char.width_cjk() < width {
+                if len + char.width_cjk() <= width {
                     len += char.width_cjk();
                     start = ind;
                 } else {
