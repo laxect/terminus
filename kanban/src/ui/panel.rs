@@ -67,7 +67,7 @@ impl Input {
                     len += char.width_cjk();
                     start = ind;
                 } else {
-                break;
+                    break;
                 }
             }
             let show = &self.input[start..];
