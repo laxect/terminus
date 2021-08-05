@@ -62,7 +62,7 @@ fn handle_panel(s: &Sender<Update>, c: Event) -> anyhow::Result<()> {
             s.send(Update::PanelAction(PanelAction::Cancel))?;
             set_mode(Mode::Normal, true);
         }
-        Event::Key(Key::Char('\n' | 'y')) => {
+        Event::Key(Key::Char('s' | 'y')) => {
             s.send(Update::PanelAction(PanelAction::Confirm))?;
             set_mode(Mode::Normal, true);
         }

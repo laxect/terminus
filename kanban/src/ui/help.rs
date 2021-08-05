@@ -24,8 +24,8 @@ s      open setting
 
 j,k    next/prev
 i,e    input
-ESC    complete input / back to List view without save
-<CR>   commit edit";
+s      commit edit
+ESC    complete input / back to List view without save";
 
 pub(super) fn help_panel() -> Panel {
     Panel::new(vec![], DOC, PanelMode::Info)
