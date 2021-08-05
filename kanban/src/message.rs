@@ -1,8 +1,5 @@
 use crossbeam_channel::{Receiver, Sender};
-use std::{
-    sync::{Arc, Mutex},
-    time::Duration,
-};
+use std::sync::{Arc, Mutex};
 use terminus_types::{
     action::{Action, ListTarget, Response},
     Error, Node, NodeId,
@@ -11,7 +8,6 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{tcp::OwnedReadHalf, TcpStream},
     runtime::Runtime,
-    time::timeout,
 };
 
 use crate::config::Config;
@@ -175,9 +171,7 @@ async fn send(s: Sender<Update>, r: Receiver<Request>, endpoint: &str) -> anyhow
         write.write_all(&bin).await?;
     }
     write.write(EOS).await?;
-    if let Err(e) = timeout(Duration::from_secs(3), recv_task).await {
-        log::error!("recv task exist with error: {}", e);
-    }
+    recv_task.abort();
     Ok(relink)
 }
 

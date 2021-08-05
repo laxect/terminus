@@ -159,6 +159,21 @@ impl Node {
     pub fn is_top_level(&self) -> bool {
         self.id.len() == 16
     }
+
+    pub fn empty_node() -> Self {
+        Self {
+            id: Vec::new(),
+            title: String::new(),
+            author: Author {
+                name: String::new(),
+                pass: Pass::Pass(String::new()),
+            },
+            content: String::new(),
+            publish_time: Utc::now(),
+            last_reply: Utc::now(),
+            edited: false,
+        }
+    }
 }
 
 #[cfg(test)]

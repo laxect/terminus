@@ -661,6 +661,7 @@ dependencies = [
  "anyhow",
  "bincode",
  "chrono",
+ "crossbeam-channel",
  "log",
  "log-panics",
  "once_cell",

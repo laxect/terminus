@@ -1,4 +1,5 @@
 use chrono::{DateTime, Duration, Utc};
+use crossbeam_channel::Sender;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use sled::{Batch, Db, IVec};
@@ -200,6 +201,26 @@ pub(crate) fn update(node: Node) -> anyhow::Result<Response> {
         }
         Ok(Response::Update(node))
     })
+}
+
+pub(crate) async fn notify_channel(s: Sender<Response>) -> anyhow::Result<()> {
+    let mut inbox = DB.open_tree(CONTENT_TREE)?.watch_prefix(&[]);
+    while let Some(event) = (&mut inbox).await {
+        match event {
+            sled::Event::Insert { key, value } => {
+                let node = assemble_node(&key, &value)?;
+                let resp = Response::Update(node);
+                s.send(resp)?;
+            }
+            sled::Event::Remove { key } => {
+                let mut node = Node::empty_node();
+                node.id = key.to_vec();
+                let resp = Response::Delete(node);
+                s.send(resp)?;
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
