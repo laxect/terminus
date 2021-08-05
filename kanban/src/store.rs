@@ -68,7 +68,7 @@ impl Store {
                 } else {
                     log::error!("data deserialize failed!");
                 }
-                n += 4;
+                n += 16;
             }
             id
         });
