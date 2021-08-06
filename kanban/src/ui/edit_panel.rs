@@ -25,7 +25,7 @@ pub(super) fn update_panel(info: Option<&str>, node: &Node) -> Panel {
     ];
     Panel::new(
         inputs,
-        info.unwrap_or("press i to input, ESC to quit, Return to confirm."),
+        info.unwrap_or("press i to input, ESC to quit, s to confirm."),
         PanelMode::Panel,
     )
 }
