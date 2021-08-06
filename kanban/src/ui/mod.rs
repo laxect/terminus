@@ -76,29 +76,23 @@ impl App<'_> {
 
     fn draw_title<'a>(&self, title: String, width: usize, mut space: usize) -> Text<'a> {
         space = std::cmp::min(space, BLANK.len());
-        let color = space as u8;
-        let color = if let State::Root = self.state() {
-            Color::Rgb(50, 50, 255 - color)
-        } else {
-            Color::Rgb(color, color, color)
-        };
         // start from '# '.
         let width = width - 2 - space;
         let mut title = title.unicode_split(width);
         let first = title.next().unwrap_or_default().to_owned();
         let first = Spans::from(vec![
             Span::from(&BLANK[0..space]),
-            Span::styled("# ", Style::default().add_modifier(Modifier::BOLD).fg(color)),
-            Span::styled(first, Style::default().add_modifier(Modifier::BOLD).fg(color)),
+            Span::styled("# ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::styled(first, Style::default().add_modifier(Modifier::BOLD)),
         ]);
         let mut lines = vec![first];
         for line in title {
             let line = Spans::from(vec![
                 Span::from(&BLANK[0..space]),
-                Span::styled("  ", Style::default().add_modifier(Modifier::BOLD).fg(color)),
+                Span::styled("  ", Style::default().add_modifier(Modifier::BOLD)),
                 Span::styled(
                     line.trim_start().to_owned(),
-                    Style::default().add_modifier(Modifier::BOLD).fg(color),
+                    Style::default().add_modifier(Modifier::BOLD),
                 ),
             ]);
             lines.push(line);
@@ -183,7 +177,7 @@ impl App<'_> {
         // List
         let list = List::new(list)
             .block(main)
-            .highlight_style(Style::default().bg(Color::Rgb(235, 235, 235)));
+            .highlight_style(Style::default().bg(Color::Cyan).fg(Color::White));
         f.render_stateful_widget(list, area, &mut self.list_state);
     }
 
