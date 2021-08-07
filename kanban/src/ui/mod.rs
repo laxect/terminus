@@ -352,6 +352,10 @@ pub(crate) fn run(s: Sender<Request>, r: Receiver<Update>, config: Arc<Mutex<Con
     loop {
         terminal.draw(|f| app.draw(f))?;
         let event = r.recv()?;
+        if event.is_resize() {
+            // just re-draw
+            continue;
+        }
         if let Some(panel) = app.panel.as_mut() {
             match event {
                 Update::PanelAction(PanelAction::Confirm) => {

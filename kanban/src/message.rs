@@ -30,7 +30,7 @@ impl Request {
         Ok(())
     }
 
-    /// Returns `true` if the request is [`Relink`].
+    /// Returns `true` if the request is [`Self::Relink`].
     pub(crate) fn is_relink(&self) -> bool {
         matches!(self, Self::Relink)
     }
@@ -50,7 +50,7 @@ impl From<Request> for Action {
 }
 
 impl Request {
-    /// Returns `true` if the request is [`Shutdown`].
+    /// Returns `true` if the request is [`Self::Shutdown`].
     pub(crate) fn is_shutdown(&self) -> bool {
         matches!(self, Self::Shutdown)
     }
@@ -103,6 +103,15 @@ pub(crate) enum Update {
     // panel action
     OpenPanel(OpenPanel),
     PanelAction(PanelAction),
+    // resize notification
+    Resize,
+}
+
+impl Update {
+    /// Returns `true` if the update is [`Self::Resize`].
+    pub(crate) fn is_resize(&self) -> bool {
+        matches!(self, Self::Resize)
+    }
 }
 
 /// link start!

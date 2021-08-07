@@ -1,4 +1,6 @@
 use config::Config;
+use crossbeam_channel::Sender;
+use message::Update;
 use std::{
     fs,
     fs::OpenOptions,
@@ -12,6 +14,16 @@ mod event;
 mod message;
 mod store;
 mod ui;
+
+fn set_resize_info(s: Sender<Update>) -> anyhow::Result<()> {
+    let mut hook = signal_hook::iterator::Signals::new(&[libc::SIGWINCH])?;
+    thread::spawn(move || {
+        for _ in hook.forever() {
+            s.send(Update::Resize).ok();
+        }
+    });
+    Ok(())
+}
 
 fn main() {
     // log file
@@ -39,6 +51,8 @@ fn main() {
             log::error!("backend event failed: {}", e);
         }
     });
+    let s_resize = s_back.clone();
+    set_resize_info(s_resize).ok();
     let msg_config = config.clone();
     let message_th = thread::spawn(move || {
         if let Err(e) = message::handle(s_back, r_back, msg_config) {
